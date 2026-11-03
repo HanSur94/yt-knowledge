@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block body %}
+<form method="get" action="/" style="margin-bottom:1rem">
+  <input type="search" name="q" value="{{ q }}" placeholder="phrase from any transcript">
+  <button type="submit">search</button>
+  <span class="dim">{{ hits|length }} hits</span>
+</form>
+<table><thead><tr><th>Title</th><th>Matched</th><th class="num">At</th></tr></thead><tbody>
+{% for h in hits %}
+<tr><td><a href="/v/{{ h['id'] }}" style="color:var(--fg)">{{ h["title"] or h["id"] }}</a>
+<div class="dim">{{ h["channel"] or "" }}</div></td>
+<td class="dim">{{ "summary" if h["kind"] == "summary" else "…" ~ h["hit"][:90] }}</td>
+<td class="num">{% if h["kind"] == "transcript" %}<a href="https://youtu.be/{{ h['id'] }}?t={{ h['ts']|int }}">{{ h['ts']|int//60 }}:{{ "%02d"|format(h['ts']|int%60) }}</a>{% else %}—{% endif %}</td></tr>
+{% endfor %}</tbody></table>
+{% endblock %}

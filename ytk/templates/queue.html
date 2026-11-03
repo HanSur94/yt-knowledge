@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block body %}
+<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+  <span class="dim">worker
+    <b style="color:var(--fg)">{{ "disabled" if disabled else ("paused" if paused else ("blocked" if blocked else "running")) }}</b>
+  </span>
+  {% if blocked %}<span class="dim">· {{ blocked }} row(s) resting after a block</span>{% endif %}
+  {% if last_fail %}<span class="dim">· last failure {{ last_fail[:16].replace("T", " ") }}</span>{% endif %}
+  <span style="margin-left:auto"></span>
+  {% if paused %}
+  <form method="post" action="/admin/resume"><button>resume</button></form>
+  {% else %}
+  <form method="post" action="/admin/pause"><button>pause</button></form>
+  {% endif %}
+  <form method="post" action="/queue/retry-failed"><button>retry failed ({{ counts["failed"] }})</button></form>
+  <form method="post" action="/export/md"><button>export markdown</button></form>
+  <form method="post" action="/admin/resummarize"><button>resummarize</button></form>
+</div>
+
+<form method="post" action="/import/url" style="display:flex;gap:.5rem;margin-bottom:1.2rem">
+  <input type="url" name="url" placeholder="https://youtu.be/..." style="flex:1">
+  <button type="submit">add video</button>
+</form>
+
+<div class="stats">
+{% for k in ["total","pending","running","fetched","ready","failed","no_caption","archived"] %}
+<div><b>{{ counts[k] }}</b><span>{{ k }}</span></div>
+{% endfor %}
+</div>
+
+<h3 style="font-weight:500">Failures</h3>
+{% if not failures %}<p class="dim">None.</p>{% endif %}
+<table>
+<thead><tr><th>Video</th><th>Stage</th><th>Reason</th><th class="num">Attempts</th><th></th></tr></thead>
+<tbody>
+{% for f in failures %}
+<tr><td><a href="/v/{{ f['id'] }}" style="color:var(--fg)">{{ f["title"] or f["id"] }}</a></td>
+<td class="dim">{{ f["fail_stage"] }}</td>
+<td class="error">{{ f["fail_reason"] }}</td><td class="num">{{ f["attempts"] }}</td>
+<td><form method="post" action="/videos/{{ f['id'] }}/retry"><button>retry</button></form></td></tr>
+{% endfor %}
+</tbody></table>
+{% endblock %}

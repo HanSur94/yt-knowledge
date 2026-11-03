@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block body %}
+<form method="get" action="/" style="margin-bottom:1rem">
+  <input type="search" name="q" value="{{ q }}" placeholder="title or channel">
+  <button type="submit">search</button>
+  <span class="dim">{{ total }} videos</span>
+</form>
+{% if not rows %}<p class="dim">Nothing yet. Run the collector.</p>{% endif %}
+<table>
+<thead><tr><th></th><th>Title</th><th>Channel</th><th class="num">Watches</th>
+<th class="num">Last</th><th>State</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr><td style="width:96px"><a href="/v/{{ r['id'] }}">{% if r["has_thumb"] %}<img
+  src="/thumb/{{ r['id'] }}.jpg" alt="" width="88" height="50" loading="lazy"
+  style="object-fit:cover;border-radius:3px;display:block">{% else %}<div
+  style="width:88px;height:50px;border-radius:3px;background:var(--line);display:block"></div>{% endif %}</a></td>
+<td><a href="/v/{{ r['id'] }}" style="color:var(--fg)">{{ r["title"] or r["id"] }}</a></td>
+<td class="dim">{{ r["channel"] or "—" }}</td>
+<td class="num">{{ r["watches"] }}</td>
+<td class="num">{{ (r["last_watched"] or "")[:10] }}</td>
+<td class="dim">{{ r["state"] }}</td></tr>
+{% endfor %}
+</tbody></table>
+{% if pages > 1 %}
+<p class="dim">page {{ page }} / {{ pages }}
+{% if page < pages %}<a href="?q={{ q }}&page={{ page + 1 }}">next</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

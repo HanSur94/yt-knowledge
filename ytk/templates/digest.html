@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block body %}
+<div style="display:flex;gap:1rem;align-items:baseline;margin-bottom:1rem">
+  <h2 style="font-weight:500;margin:0">Digest</h2>
+  <span class="dim">{{ week }}</span>
+  <form method="post" action="/digest/run" style="margin-left:auto">
+    <button type="submit">{{ "regenerate" if d else "generate" }}</button>
+  </form>
+</div>
+{% if not d %}
+  <p class="dim">No digest yet. One is generated per ISO week from the videos
+  watched that week that already have a summary.</p>
+{% else %}
+  <p class="dim">{{ d["week"] }} · {{ d["video_count"] }} videos ·
+  generated {{ d["generated_at"][:16].replace("T", " ") }} UTC ·
+  {{ d["model"] }}</p>
+  <div style="white-space:pre-wrap;line-height:1.65;max-width:70ch">{{ d["markdown"] }}</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+services:
+  ytk:
+    build: .
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-10}"
+    env_file: .env
+    volumes:
+      - /volume1/docker/yt-knowledge/data:/data
+    ports:
+      # LAN-only: bind the host address, not 0.0.0.0
+      - "192.168.178.40:8499:8499"
+
+  # Daily snapshot without root: the NAS denies user crontab and has no
+  # passwordless sudo, so the schedule lives in a container instead.
+  backup:
+    image: src-ytk
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-10}"
+    volumes:
+      - /volume1/docker/yt-knowledge/data:/data
+      - /volume1/docker/yt-knowledge/backups:/backups
+    command: ["python", "/app/scripts/backup_loop.py"]
+    healthcheck:
+      # It inherits the app image's HEALTHCHECK, which probes a port this
+      # container does not serve; without this it is permanently "unhealthy".
+      disable: true
+    environment:
+      BACKUP_INTERVAL: "86400"
+      BACKUP_KEEP: "7"

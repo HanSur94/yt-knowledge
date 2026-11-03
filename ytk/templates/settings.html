@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block body %}
+<h2 style="font-weight:500;margin:0 0 1rem">Settings</h2>
+<form method="post" action="/settings" style="max-width:34rem">
+  <p class="dim" style="margin-bottom:1.2rem">Applies to videos fetched from now on.
+  Rows already archived keep their state.</p>
+
+  <label class="dim" for="max_min">longest video to keep, in minutes (0 = no limit)</label>
+  <input type="number" id="max_min" name="max_min" min="0" max="600" step="5"
+         value="{{ max_min }}" style="width:100%;margin:.3rem 0 1.2rem">
+
+  <label class="dim" for="min_min">shortest video to keep, in minutes</label>
+  <input type="number" id="min_min" name="min_min" min="0" max="600" step="1"
+         value="{{ min_min }}" style="width:100%;margin:.3rem 0 1.2rem">
+
+  <button type="submit">save</button>
+</form>
+
+<h3 style="font-weight:500;margin-top:2rem">Where things live</h3>
+<table>
+<tbody>
+<tr><td class="dim">export</td><td>{{ export }}</td></tr>
+<tr><td class="dim">database</td><td class="dim">beside the export directory</td></tr>
+</tbody></table>
+{% endblock %}

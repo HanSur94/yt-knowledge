@@ -1,0 +1,35 @@
+[project]
+name = "yt-knowledge"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "jinja2>=3.1",
+  "itsdangerous>=2.2",
+  "python-multipart>=0.0.9",
+  "youtube-transcript-api>=1.2",
+  "yt-dlp>=2025.1",
+  "mcp>=2,<3",
+]
+
+[project.optional-dependencies]
+collector = ["browser-history>=0.5"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+ytk = "ytk.app:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ytk"]
+
+[tool.setuptools.package-data]
+ytk = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

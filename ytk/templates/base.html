@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}yt-k{% endblock %}</title>
+<style>
+:root{--fg:#e8e8ea;--dim:#9a9aa2;--line:#2a2a30;--bg:#111114;--acc:#7aa2f7}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+header{display:flex;gap:1.5rem;align-items:baseline;padding:.9rem 1.4rem;
+       border-bottom:1px solid var(--line)}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+header a{color:var(--dim);text-decoration:none}header a:hover{color:var(--fg);text-decoration:none}
+header .brand{color:var(--fg);font-weight:600}
+main{padding:1.4rem;max-width:1100px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--line);
+      vertical-align:top}
+th{color:var(--dim);font-weight:400;font-size:12px;text-transform:uppercase}
+td.num{color:var(--dim);white-space:nowrap;text-align:right}
+input[type=search],input[type=password],input[type=url]{background:#1a1a1f;border:1px solid var(--line);
+  color:var(--fg);padding:.5rem .7rem;border-radius:4px;font:inherit;min-width:18rem}
+button{background:#22222a;color:var(--fg);border:1px solid var(--line);
+  padding:.5rem .9rem;border-radius:4px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--acc)}
+.error{color:#f7768e}.dim{color:var(--dim)}
+.stats{display:flex;gap:2rem;margin-bottom:1.2rem}
+.stats div{display:flex;flex-direction:column}
+.stats b{font-size:20px}.stats span{color:var(--dim);font-size:12px}
+</style></head>
+<body>
+<header><a class="brand" href="/">yt-k</a><a href="/">library</a>
+<a href="/queue">queue</a>
+<a href="/settings">settings</a>
+<a href="/digest">digest</a><a href="/logout">logout</a></header>
+<main>{% block body %}{% endblock %}</main>
+</body></html>

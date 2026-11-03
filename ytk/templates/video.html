@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block body %}
+<p class="dim"><a href="/">← library</a></p>
+<h2 style="font-weight:500;margin:.2rem 0">{{ v["title"] or v["id"] }}</h2>
+<p class="dim">{{ v["channel"] or "unknown channel" }} ·
+{{ (v["duration_s"] or 0)//60 }} min · {{ v["published_at"] or "—" }} ·
+{{ v["state"] }}{% if v["fail_reason"] %} — {{ v["fail_reason"] }}{% endif %}</p>
+
+<div style="display:flex;gap:1.5rem;align-items:flex-start;margin:1.2rem 0">
+{% if v["thumb_path"] %}<img src="/thumb/{{ v['id'] }}.jpg" alt="" width="320"
+  style="border-radius:6px;border:1px solid var(--line)">{% endif %}
+<div style="flex:1">
+{% if s %}
+  <p><b>{{ s["headline"] }}</b></p>
+  <ul style="padding-left:1.1rem">
+  {% for b in bullets %}<li><a href="https://youtu.be/{{ v['id'] }}?t={{ b[0] }}"
+     class="dim">{{ b[0]//60 }}:{{ "%02d"|format(b[0]%60) }}</a> {{ b[1] }}</li>{% endfor %}
+  </ul>
+  {% if s["tags_json"] %}<p class="dim">{{ s["tags_json"] }}</p>{% endif %}
+{% else %}
+  <p class="dim">No summary yet.</p>
+{% endif %}
+</div></div>
+
+{% if chapters %}<h3 style="font-weight:500">Chapters</h3>
+<ul class="dim" style="padding-left:1.1rem">
+{% for c in chapters %}<li><a href="https://youtu.be/{{ v['id'] }}?t={{ c[0]|int }}">{{ c[0]|int//60 }}:{{ "%02d"|format(c[0]|int%60) }}</a> {{ c[1] }}</li>{% endfor %}
+</ul>{% endif %}
+
+{% if segments %}
+<details><summary class="dim">Transcript ({{ segments|length }} lines)</summary>
+<div class="dim" style="font-size:12px;margin-top:.6rem;line-height:1.65">
+{% for g in segments %}<span style="color:var(--line)">{{ g[0]|int//60 }}:{{ "%02d"|format(g[0]|int%60) }}</span> {{ g[1] }}<br>{% endfor %}
+</div></details>{% endif %}
+
+<h3 style="font-weight:500">Watch log</h3>
+<table><thead><tr><th>When</th><th class="num">Dwell</th><th>Source</th></tr></thead><tbody>
+{% for w in watches %}<tr><td>{{ w["watched_at"] }}</td>
+<td class="num">{{ (w["dwell_s"]//60 ~ " min") if w["dwell_s"] else "—" }}</td>
+<td class="dim">{{ w["sources"] }}</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block body %}
+<form method="post" action="/login" style="max-width:22rem">
+  <p class="dim">Shared secret.</p>
+  <input type="password" name="password" autofocus required>
+  <button type="submit">enter</button>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</form>
+{% endblock %}
