@@ -269,6 +269,12 @@ def fail(conn, video_id: str, stage: str, reason: str) -> int:
     # Cap it: uncapped, attempts=12 means 68 hours, and the only recovery is a
     # human clicking retry. An unattended service cannot depend on that.
     delay = min(60 * 2 ** attempts, 3600)
+    # Twenty honest tries is enough to tell "temporary" from "this IP cannot".
+    # Without this a caption block retries hourly for ever: 880 rows had already
+    # reached 23-25 attempts that way. Park it for a week; the queue page has a
+    # manual retry for when the network actually changes.
+    if attempts >= 20:
+        delay = 7 * 86400
     conn.execute("""UPDATE videos SET state='failed', running_since=NULL,
                     fail_stage=?, fail_reason=?,
                     attempts=?, next_attempt_at=? WHERE id=?""",

@@ -124,3 +124,20 @@ def test_search_matches_words_in_any_order(conn):
     db.save_fetch(conn, "dQw4w9WgXcQ", {"title": "T", "channel": "C"},
                   [(1.0, "a confusing acquisition for the team")], [], [])
     assert len(db.search(conn, "acquisition confusing")) == 1
+
+
+def test_fail_parks_a_hopeless_video(tmp_path):
+    from datetime import UTC, datetime
+
+    from ytk import db
+
+    conn = db.connect(str(tmp_path / "t.sqlite"))
+    db.init(conn)
+    db.upsert_video(conn, {"video_id": "aaaaaaaaaaa", "title": "T", "channel": "C"})
+    conn.execute("UPDATE videos SET attempts=19")
+    now = int(datetime.now(UTC).timestamp())
+    db.fail(conn, "aaaaaaaaaaa", "fetch", "blocked")
+    attempts, due = conn.execute("SELECT attempts, next_attempt_at FROM videos").fetchone()
+    assert attempts == 20
+    assert due - now >= 7 * 86400 - 5          # parked for a week, not one hour
+    conn.close()
