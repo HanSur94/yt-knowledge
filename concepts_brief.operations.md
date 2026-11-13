@@ -148,3 +148,16 @@ NAS tree is still a tar copy with no commit stamp. N1-N6 are unchanged.
   visible without opening the database.
 
 36 tests pass. Commits: 1b591e0, b06cd9a, 244fe98.
+
+## Digest cadence (follow-up)
+
+The loop now checks hourly and refuses to freeze a week while it is still being
+fetched: `should_wait()` counts watched videos in that week that are
+pending/fetched/running/failed, and holds off until the week is four days old,
+then writes it with whatever exists. Without that gate a thin digest was written
+once and never corrected. `/digest` states how many videos are still being
+fetched.
+
+Proof: after the deploy (f2fa0b1) the loop ran on startup and created 2026-W45
+on its own — 2 videos, 1,844 characters. Two of ninety-nine, because only 193
+videos in the archive have summaries; the digest is not the bottleneck.
