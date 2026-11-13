@@ -4,6 +4,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY ytk ./ytk
 COPY scripts ./scripts
+COPY DEPLOYED ./DEPLOYED
 RUN pip install --no-cache-dir .
 RUN mkdir -p /data
 VOLUME /data
