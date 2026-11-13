@@ -103,19 +103,17 @@ curl -H "Authorization: Bearer $YTK_SECRET" -H 'Content-Type: application/json' 
 
 ### Collector (watch history, Mac only)
 
-`scripts/collect_push.sh` reads the import token from the Keychain
-(`ytk-import`) and pushes browser history. It is installed as a LaunchAgent
-(`com.hannes.ytk-collector`, daily 21:10):
+`scripts/collect_push.sh` reads the import token (Keychain `ytk-import`, else
+`~/.config/ytk-import-token`, mode 0600) and pushes browser history. It runs as a
+Hermes cron job daily at 21:10: a LaunchAgent cannot read `~/Documents` — macOS
+TCC answers "Operation not permitted" — while the same command over ssh works.
 
 ```sh
-launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.hannes.ytk-collector.plist
-launchctl kickstart -k gui/$UID/com.hannes.ytk-collector
-tail ~/Library/Logs/ytk-collector.log
+sh scripts/collect_push.sh
 ```
 
-If the log reports zero visits, the job cannot read the browser database: grant
-Full Disk Access to `/bin/sh` (System Settings → Privacy & Security), or run the
-script once from Terminal, which already has it.
+Zero visits means the browser database was unreadable; run it from a GUI
+Terminal, which holds the Full Disk Access grant.
 
 ### Restore a backup
 
