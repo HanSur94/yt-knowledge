@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import db, digest, export, ingest, worker
+from . import db, digest, export, ingest, progress, worker
 from .config import load
 from .mcp_server import inner as mcp_app
 from .mcp_server import mcp
@@ -198,10 +198,32 @@ async def video_page(request: Request, video_id: str):
                         (video_id,)).fetchall()
     watches = conn.execute("SELECT watched_at, dwell_s, sources FROM watches WHERE video_id=? "
                            "ORDER BY watched_at DESC", (video_id,)).fetchall()
+    has_segments = bool(conn.execute(
+        "SELECT 1 FROM segments WHERE video_id=? LIMIT 1", (video_id,)).fetchone())
     return templates.TemplateResponse(request, "video.html", {
         "v": v, "s": s, "bullets": bullets, "chapters": chaps, "segments": segs,
-        "watches": watches,
+        "watches": watches, "job": progress.stage(v["state"], has_segments,
+                                                  v["attempts"]),
         "has_thumb": os.path.exists(os.path.join(cfg.thumbs, f"{video_id}.jpg"))})
+
+
+@app.get("/v/{video_id}/status")
+async def video_status(request: Request, video_id: str):
+    """What the page polls while a video is being digested."""
+    conn = request.app.state.conn
+    v = conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+    if not v:
+        return JSONResponse({"error": "no such video"}, status_code=404)
+    has_segments = bool(conn.execute(
+        "SELECT 1 FROM segments WHERE video_id=? LIMIT 1", (video_id,)).fetchone())
+    elapsed = None
+    if v["state"] == "running" and v["running_since"]:
+        elapsed = conn.execute(
+            "SELECT CAST((julianday('now') - julianday(?)) * 86400 AS INTEGER)",
+            (v["running_since"],)).fetchone()[0]
+    return {"state": v["state"], **progress.stage(v["state"], has_segments,
+                                                  v["attempts"]),
+            "elapsed_s": elapsed}
 
 
 @app.get("/digest", response_class=HTMLResponse)

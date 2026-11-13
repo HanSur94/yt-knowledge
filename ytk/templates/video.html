@@ -16,6 +16,36 @@
 </div>
 {% if v["fail_reason"] and v["state"] == "failed" %}<p class="dim" style="font-size:12.5px;margin:.6rem 0 0">{{ v["fail_reason"] }}</p>{% endif %}
 
+{% if not job.done %}
+<div class="job" data-id="{{ v['id'] }}">
+  <div class="bar" role="progressbar" aria-valuenow="{{ job.pct }}"
+       aria-valuemin="0" aria-valuemax="100"><span style="width:{{ job.pct }}%"></span></div>
+  <div class="meta" style="margin-top:.55rem"><span id="job-label">{{ job.label }}</span>
+    <span id="job-elapsed" class="dim"></span></div>
+</div>
+<script>
+(() => {
+  const root = document.querySelector(".job");
+  const id = root.dataset.id, label = document.getElementById("job-label");
+  const elapsed = document.getElementById("job-elapsed");
+  const fill = root.querySelector(".bar span");
+  async function tick() {
+    try {
+      const r = await fetch(`/v/${id}/status`);
+      if (!r.ok) return;
+      const d = await r.json();
+      label.textContent = d.label;
+      fill.style.width = d.pct + "%";
+      elapsed.textContent = d.elapsed_s == null ? "" :
+        Math.floor(d.elapsed_s / 60) + ":" + String(d.elapsed_s % 60).padStart(2, "0") + " elapsed";
+      if (d.done) setTimeout(() => location.reload(), 700);
+    } catch (e) { /* a dropped poll is not an error worth showing */ }
+  }
+  tick(); setInterval(tick, 3000);
+})();
+</script>
+{% endif %}
+
 <hr style="border:0;border-top:1px solid var(--rule);margin:1.7rem 0 1.5rem">
 
 {% if s %}
