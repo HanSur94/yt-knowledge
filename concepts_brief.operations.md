@@ -119,3 +119,32 @@ the 165 videos". The 2025-W31 row is untouched.
 
 F8 is half done: the baseline and the operations commit exist on the Mac; the
 NAS tree is still a tar copy with no commit stamp. N1-N6 are unchanged.
+
+## Next-pass outcome (2026-11-10, 23:20)
+
+* **N1 collector.** `YTK_IMPORT_TOKEN` is a separate, write-scoped token accepted
+  only under `/import*`, so the Mac never holds the login secret. The script
+  reads it from the Keychain when available, otherwise from
+  `~/.config/ytk-import-token` (0600) — adding a Keychain item from a non-GUI
+  session fails with "User interaction is not allowed". A LaunchAgent cannot read
+  `~/Documents` (TCC: "Operation not permitted"); the collector runs as a Hermes
+  cron job at 21:10 over the ssh session instead. First run: 2,353 visits,
+  142 new, 2,056 merged, newest watch 2026-11-11 (was 2026-11-01).
+* **N2 ceiling.** `max_duration_s` set to 0 (no ceiling); the 361
+  length-archived rows requeued. `archived` 567 -> 206, `pending` 1,318.
+* **N3 search.** `db.search` now requires every word, not adjacency:
+  `"acquisition confusing"` matches "a confusing acquisition". Test added.
+* **N4 provenance.** `summarize.call()` returns the model that answered and the
+  summariser/digest store it. The gateway exposes one id (`hermes-agent`), so the
+  env pin stays `auto`; new rows now record what actually answered.
+* **N5 import scope.** Import token as above; session lifetime 7 days instead of
+  Starlette's 14.
+* **N6 restore.** The schema guard already existed
+  (`test_user_version_mismatch_refuses_to_start`); the missing half was the
+  written procedure, now in `README.md` under "Restore a backup".
+* **N7 deploy stamp.** Deploy copies `git archive HEAD` and writes the commit to
+  `DEPLOYED`, which the image bakes in; `/healthz` reports
+  `"version": "b06cd9a"`. `/healthz` also reports `newest_watch`, so staleness is
+  visible without opening the database.
+
+36 tests pass. Commits: 1b591e0, b06cd9a, 244fe98.
