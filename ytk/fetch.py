@@ -7,6 +7,8 @@ import urllib.request
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36"
 SPONSOR_CATEGORIES = ["sponsor", "selfpromo", "intro", "outro"]
+# Netscape cookie file. Absent = anonymous requests, as before.
+COOKIES = os.environ.get("YTK_COOKIES") or "/data/cookies.txt"
 THUMB_URL = "https://i.ytimg.com/vi/{}/maxresdefault.jpg"
 THUMB_FALLBACK = "https://i.ytimg.com/vi/{}/hqdefault.jpg"
 SPONSOR_URL = ("https://sponsor.ajay.app/api/skipSegments?videoID={}"
@@ -62,6 +64,25 @@ def metadata(video_id: str, timeout: int = 60) -> dict:
     }
 
 
+def _session():
+    """requests.Session carrying the archive's YouTube cookies, if a cookie file
+    exists. youtube-transcript-api takes one through `http_client`; a logged-in
+    session is what gets past the IP-level caption block."""
+    if not os.path.exists(COOKIES):
+        return None
+    import http.cookiejar
+    import requests
+    try:
+        jar = http.cookiejar.MozillaCookieJar(COOKIES)
+        jar.load(ignore_discard=True, ignore_expires=True)
+    except Exception as exc:  # noqa: BLE001 - a bad file must not kill the worker
+        print(f"cookies: cannot read {COOKIES}: {exc}", flush=True)
+        return None
+    session = requests.Session()
+    session.cookies = jar
+    return session
+
+
 def transcript(video_id: str, languages=("en", "de")):
     """Caption track -> [(start, text)]. Raises NoCaption or Retryable."""
     from youtube_transcript_api import YouTubeTranscriptApi
@@ -74,7 +95,7 @@ def transcript(video_id: str, languages=("en", "de")):
         VideoUnavailable,
     )
 
-    api = YouTubeTranscriptApi()
+    api = YouTubeTranscriptApi(http_client=_session())
     try:
         got = api.fetch(video_id, languages=list(languages))
     except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable, AgeRestricted) as exc:
