@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from . import db, summarize
 
 BERLIN = ZoneInfo("Europe/Berlin")
+SETTLE_DAYS = 4   # give the fetcher the weekend before freezing a week
 
 
 def week_of(day: date | None = None) -> tuple[date, date, str]:
@@ -30,6 +31,23 @@ def parse_week(text: str) -> tuple[date, date, str]:
     monday = date.fromisocalendar(int(year), int(num), 1)
     iso = monday.isocalendar()
     return monday, monday + timedelta(days=7), f"{iso.year}-W{iso.week:02d}"
+
+
+def should_wait(conn, start: date, end: date, today: date | None = None) -> int:
+    """Unsettled videos from the week, unless the week is old enough to freeze.
+
+    A digest generated while its week is still being fetched says "2 of 99" and
+    then stays wrong for ever, because the row is never regenerated.
+    """
+    lo, hi = window(start, end)
+    n = conn.execute("""
+        SELECT COUNT(*) FROM watches w JOIN videos v ON v.id = w.video_id
+        WHERE w.watched_at >= ? AND w.watched_at < ?
+          AND v.state IN ('pending','fetched','running','failed')""",
+        (lo, hi)).fetchone()[0]
+    if n and (today or datetime.now(BERLIN).date()) < end + timedelta(days=SETTLE_DAYS):
+        return n
+    return 0
 
 
 def window(start: date, end: date) -> tuple[str, str]:
@@ -110,7 +128,7 @@ async def loop(cfg, stop: asyncio.Event) -> None:
             except Exception:  # noqa: BLE001 - one bad week must not kill the loop
                 traceback.print_exc()
         try:
-            await asyncio.wait_for(stop.wait(), timeout=6 * 3600)
+            await asyncio.wait_for(stop.wait(), timeout=3600)
         except TimeoutError:
             pass
 
@@ -118,7 +136,10 @@ async def loop(cfg, stop: asyncio.Event) -> None:
 def _run(cfg) -> dict:
     """Own connection: the app's is opened check_same_thread=True."""
     conn = db.connect(cfg.db, same_thread=False)
+    start, end, week = last_week()
     try:
-        return generate(conn, week_arg=last_week()[2])
+        if should_wait(conn, start, end):
+            return {"week": week, "generated": False, "reason": "week still settling"}
+        return generate(conn, week_arg=week)
     finally:
         conn.close()

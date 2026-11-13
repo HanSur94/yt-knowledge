@@ -215,9 +215,15 @@ async def digest_page(request: Request, week: str = ""):
         row = conn.execute("SELECT * FROM digests WHERE week=?", (week,)).fetchone()
     else:
         row = conn.execute("SELECT * FROM digests ORDER BY week DESC LIMIT 1").fetchone()
+        if not row:
+            week = digest.last_week()[2]
+    waiting = 0
+    if not row:
+        start, end, _ = digest.last_week()
+        waiting = digest.should_wait(conn, start, end)
     return templates.TemplateResponse(request, "digest.html",
-                                      {"d": row, "week": row["week"] if row
-                                       else digest.week_of()[2]})
+                                      {"d": row, "week": row["week"] if row else week,
+                                       "waiting": waiting})
 
 
 @app.post("/digest/run")

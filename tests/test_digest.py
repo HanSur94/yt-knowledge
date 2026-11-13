@@ -26,3 +26,22 @@ def test_window_converts_berlin_midnight_to_utc():
 def test_parse_week_normalises_the_label():
     assert digest.parse_week("2025-W3")[2] == "2025-W03"
     assert digest.parse_week("2025-W31")[0] == digest.date(2025, 7, 28)
+
+
+def test_should_wait_while_the_week_is_still_fetching(tmp_path):
+    from ytk import db
+
+    conn = db.connect(str(tmp_path / "t.sqlite"))
+    db.init(conn)
+    db.upsert_video(conn, {"video_id": "aaaaaaaaaaa", "title": "T", "channel": "C"})
+    db.add_watch(conn, "aaaaaaaaaaa", "2026-11-03T10:00:00Z", 60, "browser")
+    start, end, _ = digest.parse_week("2026-W45")
+    # fresh week with a pending video: wait
+    assert digest.should_wait(conn, start, end, today=digest.date(2026, 11, 10)) == 1
+    # settled: never wait
+    conn.execute("UPDATE videos SET state='ready'")
+    assert digest.should_wait(conn, start, end, today=digest.date(2026, 11, 10)) == 0
+    # old week: freeze with what it has
+    conn.execute("UPDATE videos SET state='pending'")
+    assert digest.should_wait(conn, start, end, today=digest.date(2026, 11, 20)) == 0
+    conn.close()

@@ -9,6 +9,8 @@
 {% if not d %}
   <p class="dim">No digest yet. One is generated per ISO week from the videos
   watched that week that already have a summary.</p>
+  {% if waiting %}<p class="dim">{{ waiting }} videos from that week are still
+  being fetched; the digest is written once the week settles.</p>{% endif %}
 {% else %}
   <div class="meta"><span>{{ d["week"] }}</span><span>{{ d["video_count"] }} videos</span>
   <span>generated {{ d["generated_at"][:16].replace("T", " ") }} UTC</span>
