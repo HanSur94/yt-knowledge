@@ -1,28 +1,30 @@
 {% extends "base.html" %}{% block body %}
-<form method="get" action="/" style="margin-bottom:1rem">
-  <input type="search" name="q" value="{{ q }}" placeholder="title or channel">
+<form method="get" action="/" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+  <input type="search" name="q" value="{{ q }}" placeholder="title or channel" style="flex:1;min-width:0">
   <button type="submit">search</button>
-  <span class="dim">{{ total }} videos</span>
+  <span class="dim" style="font-size:12.5px;margin-left:auto">{{ total }} videos</span>
 </form>
-{% if not rows %}<p class="dim">Nothing yet. Run the collector.</p>{% endif %}
-<table>
-<thead><tr><th></th><th>Title</th><th>Channel</th><th class="num">Watches</th>
-<th class="num">Last</th><th>State</th></tr></thead>
-<tbody>
+{% if not rows %}<p class="dim" style="margin-top:2rem">Nothing yet. Run the collector.</p>{% endif %}
+<div class="list">
 {% for r in rows %}
-<tr><td style="width:96px"><a href="/v/{{ r['id'] }}">{% if r["has_thumb"] %}<img
-  src="/thumb/{{ r['id'] }}.jpg" alt="" width="88" height="50" loading="lazy"
-  style="object-fit:cover;border-radius:3px;display:block">{% else %}<div
-  style="width:88px;height:50px;border-radius:3px;background:var(--line);display:block"></div>{% endif %}</a></td>
-<td><a href="/v/{{ r['id'] }}" style="color:var(--fg)">{{ r["title"] or r["id"] }}</a></td>
-<td class="dim">{{ r["channel"] or "—" }}</td>
-<td class="num">{{ r["watches"] }}</td>
-<td class="num">{{ (r["last_watched"] or "")[:10] }}</td>
-<td class="dim">{{ r["state"] }}</td></tr>
+<a class="row" href="/v/{{ r['id'] }}">
+  <span class="frame{% if not r['has_thumb'] %} empty{% endif %}">{% if r["has_thumb"] %}<img src="/thumb/{{ r['id'] }}.jpg" alt=""
+    loading="lazy">{% endif %}</span>
+  <span class="body">
+    <span class="title">{{ r["title"] or r["id"] }}</span>
+    <span class="meta">
+      <span>{{ r["channel"] or "unknown channel" }}</span>
+      <span>{{ (r["last_watched"] or "")[:10] }}</span>
+      <span>{{ r["watches"] }} watch{{ "" if r["watches"] == 1 else "es" }}</span>
+      <span class="s-{{ r['state'] }}">{{ r["state"] }}</span>
+    </span>
+  </span>
+
+</a>
 {% endfor %}
-</tbody></table>
+</div>
 {% if pages > 1 %}
-<p class="dim">page {{ page }} / {{ pages }}
-{% if page < pages %}<a href="?q={{ q }}&page={{ page + 1 }}">next</a>{% endif %}</p>
+<p class="dim" style="margin-top:1.4rem;font-size:12.5px">page {{ page }} / {{ pages }}
+{% if page < pages %}<a class="link" href="?q={{ q }}&page={{ page + 1 }}">next</a>{% endif %}</p>
 {% endif %}
 {% endblock %}

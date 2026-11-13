@@ -10,9 +10,9 @@
   <p class="dim">No digest yet. One is generated per ISO week from the videos
   watched that week that already have a summary.</p>
 {% else %}
-  <p class="dim">{{ d["week"] }} · {{ d["video_count"] }} videos ·
-  generated {{ d["generated_at"][:16].replace("T", " ") }} UTC ·
-  {{ d["model"] }}</p>
-  <div style="white-space:pre-wrap;line-height:1.65;max-width:70ch">{{ d["markdown"] }}</div>
+  <div class="meta"><span>{{ d["week"] }}</span><span>{{ d["video_count"] }} videos</span>
+  <span>generated {{ d["generated_at"][:16].replace("T", " ") }} UTC</span>
+  <span>{{ d["model"] }}</span></div>
+  <div class="prose" style="white-space:pre-wrap;max-width:70ch;margin-top:1.4rem">{{ d["markdown"] }}</div>
 {% endif %}
 {% endblock %}

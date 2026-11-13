@@ -95,6 +95,7 @@ async def healthz(request: Request):
             "paused": worker.paused(cfg),
             "worker": task is not None and not task.done(),
             "blocked": db.blocked_count(request.app.state.conn),
+            "resting": round(worker.resting_now()),
             "counts": db.queue_counts(request.app.state.conn)}
 
 
@@ -178,7 +179,8 @@ async def video_page(request: Request, video_id: str):
                            "ORDER BY watched_at DESC", (video_id,)).fetchall()
     return templates.TemplateResponse(request, "video.html", {
         "v": v, "s": s, "bullets": bullets, "chapters": chaps, "segments": segs,
-        "watches": watches})
+        "watches": watches,
+        "has_thumb": os.path.exists(os.path.join(cfg.thumbs, f"{video_id}.jpg"))})
 
 
 @app.get("/digest", response_class=HTMLResponse)
@@ -279,13 +281,17 @@ async def settings_save(request: Request):
 @app.get("/queue", response_class=HTMLResponse)
 async def queue(request: Request):
     conn = request.app.state.conn
+    running = conn.execute(
+        "SELECT id, title, CAST((julianday('now') - julianday(running_since)) * 86400 AS INTEGER)"
+        " AS elapsed FROM videos WHERE state='running' LIMIT 5").fetchall()
     counts = db.queue_counts(conn)
     failures = conn.execute(
         "SELECT id, title, fail_stage, fail_reason, attempts FROM videos "
         "WHERE state='failed' ORDER BY last_seen DESC LIMIT 50").fetchall()
     task = getattr(request.app.state, "task", None)
     return templates.TemplateResponse(request, "queue.html", {
-        "counts": counts, "failures": failures,
+        "counts": counts, "failures": failures, "running": running,
+        "resting": worker.resting_now(), "reason": worker.STATE["reason"],
         "paused": worker.paused(cfg),
         "blocked": db.blocked_count(conn),
         "last_fail": db.last_failure(conn),

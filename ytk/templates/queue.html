@@ -1,10 +1,10 @@
 {% extends "base.html" %}{% block body %}
-<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+<div style="display:flex;gap:1.1rem;align-items:center;flex-wrap:wrap;margin-bottom:1.2rem">
   <span class="dim">worker
-    <b style="color:var(--fg)">{{ "disabled" if disabled else ("paused" if paused else ("blocked" if blocked else "running")) }}</b>
+    <b style="color:var(--ink)">{{ "disabled" if disabled else ("paused" if paused else ("blocked" if blocked else "running")) }}</b>
   </span>
-  {% if blocked %}<span class="dim">· {{ blocked }} row(s) resting after a block</span>{% endif %}
-  {% if last_fail %}<span class="dim">· last failure {{ last_fail[:16].replace("T", " ") }}</span>{% endif %}
+  {% if blocked %}<span class="dim">{{ blocked }} row(s) resting after a block</span>{% endif %}
+  {% if last_fail %}<span class="dim">last failure {{ last_fail[:16].replace("T", " ") }}</span>{% endif %}
   <span style="margin-left:auto"></span>
   {% if paused %}
   <form method="post" action="/admin/resume"><button>resume</button></form>
@@ -21,9 +21,27 @@
   <button type="submit">add video</button>
 </form>
 
+<div class="now">
+{% if running %}
+  {% for r in running %}
+  <div class="now-row"><span class="dot"></span>
+    <a class="now-title" href="/v/{{ r['id'] }}" title="{{ r['title'] }}">{{ r["title"] or r["id"] }}</a>
+    <span class="dim now-elapsed">{{ (r["elapsed"] or 0)//60 }}:{{ "%02d"|format((r["elapsed"] or 0)%60) }} elapsed</span>
+  </div>
+  {% endfor %}
+{% elif resting and resting > 0 %}
+  <div class="now-row"><span class="dot resting"></span>
+    <span class="now-title dim">resting {{ (resting|int)//60 }}:{{ "%02d"|format((resting|int)%60) }} —
+      YouTube blocked the request{% if reason %} ({{ reason }}){% endif %}, retrying automatically</span>
+  </div>
+{% else %}
+  <div class="now-row"><span class="dot idle"></span>
+    <span class="dim">idle — nothing claimed right now</span></div>
+{% endif %}
+</div>
 <div class="stats">
 {% for k in ["total","pending","running","fetched","ready","failed","no_caption","archived"] %}
-<div><b>{{ counts[k] }}</b><span>{{ k }}</span></div>
+<div><b class="{{ 'zero' if not counts[k] }}">{{ counts[k] }}</b><span>{{ k }}</span></div>
 {% endfor %}
 </div>
 
@@ -33,9 +51,9 @@
 <thead><tr><th>Video</th><th>Stage</th><th>Reason</th><th class="num">Attempts</th><th></th></tr></thead>
 <tbody>
 {% for f in failures %}
-<tr><td><a href="/v/{{ f['id'] }}" style="color:var(--fg)">{{ f["title"] or f["id"] }}</a></td>
+<tr><td><a href="/v/{{ f['id'] }}" style="color:var(--ink)">{{ f["title"] or f["id"] }}</a></td>
 <td class="dim">{{ f["fail_stage"] }}</td>
-<td class="error">{{ f["fail_reason"] }}</td><td class="num">{{ f["attempts"] }}</td>
+<td class="error" title="{{ f['fail_reason'] }}"><span class="clamp">{{ f["fail_reason"] }}</span></td><td class="num">{{ f["attempts"] }}</td>
 <td><form method="post" action="/videos/{{ f['id'] }}/retry"><button>retry</button></form></td></tr>
 {% endfor %}
 </tbody></table>

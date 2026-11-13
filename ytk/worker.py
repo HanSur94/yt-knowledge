@@ -9,6 +9,15 @@ from . import db, fetch, summarize
 
 BLOCK_PAUSE = 300   # seconds; a block is global, so rest the whole worker
 
+# Published so /queue can say "resting 4:12" instead of "idle". Module-level
+# because there is exactly one worker; a second one would need a real registry.
+STATE = {"blocked_until": 0.0, "reason": ""}
+
+
+def resting_now() -> float:
+    """Seconds left in a block rest, 0 when the worker is free to claim."""
+    return max(0.0, STATE["blocked_until"] - time.time())
+
 
 def paused(cfg) -> bool:
     """Marker beside the database: on the volume in the image (`/data`), in
@@ -137,10 +146,14 @@ async def _loop(conn, cfg, stop: asyncio.Event):
             done = None
         if isinstance(done, str) and done.startswith("blocked"):
             print(f"  {done} - pausing {BLOCK_PAUSE}s", flush=True)
+            STATE["blocked_until"] = time.time() + BLOCK_PAUSE
+            STATE["reason"] = done.split(":", 1)[-1]
             try:
                 await asyncio.wait_for(stop.wait(), timeout=BLOCK_PAUSE)
             except TimeoutError:
                 pass
+            STATE["blocked_until"] = 0.0
+            STATE["reason"] = ""
         elif done is None:
             try:
                 await asyncio.wait_for(stop.wait(), timeout=5)

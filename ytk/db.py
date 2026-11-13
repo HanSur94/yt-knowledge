@@ -4,7 +4,7 @@ import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 STATE = ("pending", "running", "fetched", "ready", "failed", "no_caption", "archived")
 
 SCHEMA = """
@@ -17,6 +17,7 @@ CREATE TABLE videos(
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at INTEGER,
   fail_stage TEXT, fail_reason TEXT,
+  running_since TEXT,
   first_seen TEXT NOT NULL, last_seen TEXT NOT NULL
 );
 CREATE INDEX idx_videos_state ON videos(state);
@@ -108,6 +109,7 @@ def connect(path: str, same_thread: bool = True) -> sqlite3.Connection:
 MIGRATIONS = {
     2: ["ALTER TABLE summaries ADD COLUMN keywords_json TEXT"],
     3: ["CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)"],
+    4: ["ALTER TABLE videos ADD COLUMN running_since TEXT"],
 }
 
 
@@ -183,7 +185,7 @@ def queue_counts(conn) -> dict:
 # ---------------------------------------------------------------- phase 2 ---
 
 CLAIM_SQL = """
-UPDATE videos SET state='running'
+UPDATE videos SET state='running', running_since=datetime('now')
 WHERE id = (SELECT id FROM videos
             -- 'fetched' is a resting state, not a transient one: a row parked
             -- there by a crash, or by /admin/resummarize, has segments and no
@@ -202,7 +204,8 @@ RETURNING *;
 def resume_stuck(conn) -> int:
     """One worker, so any 'running' row at startup was interrupted by a stop.
     Without this the row is invisible forever."""
-    return conn.execute("UPDATE videos SET state='pending' WHERE state='running'").rowcount
+    return conn.execute("UPDATE videos SET state='pending', running_since=NULL "
+                        "WHERE state='running'").rowcount
 
 
 def claim_next(conn, now: int | None = None):
@@ -255,7 +258,10 @@ def save_summary(conn, video_id: str, s: dict) -> None:
                       short_en=excluded.short_en""",
                  (video_id, s.get("title"), s.get("channel"), s["headline"],
                   " ".join(b[1] for b in s["bullets"]), s["short_en"]))
-    conn.execute("UPDATE videos SET state='ready' WHERE id=?", (video_id,))
+    # The same clearing as finish(): this path reaches 'ready' without
+    # going through it, and used to leave a dead error on a healthy row.
+    conn.execute("UPDATE videos SET state='ready', fail_stage=NULL, fail_reason=NULL "
+                 "WHERE id=?", (video_id,))
 
 
 def fail(conn, video_id: str, stage: str, reason: str) -> int:
@@ -271,7 +277,10 @@ def fail(conn, video_id: str, stage: str, reason: str) -> int:
 
 
 def finish(conn, video_id: str, state: str, reason: str | None = None) -> None:
-    conn.execute("UPDATE videos SET state=?, fail_reason=? WHERE id=?",
+    """fail_stage must go too: a stale stage on a live row reads as a live error
+    on the video page, which is how 'KeyError: model' kept showing up on videos
+    that had already succeeded."""
+    conn.execute("UPDATE videos SET state=?, fail_stage=NULL, fail_reason=? WHERE id=?",
                  (state, reason, video_id))
 
 

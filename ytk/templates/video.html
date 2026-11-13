@@ -1,41 +1,55 @@
-{% extends "base.html" %}{% block body %}
-<p class="dim"><a href="/">← library</a></p>
-<h2 style="font-weight:500;margin:.2rem 0">{{ v["title"] or v["id"] }}</h2>
-<p class="dim">{{ v["channel"] or "unknown channel" }} ·
-{{ (v["duration_s"] or 0)//60 }} min · {{ v["published_at"] or "—" }} ·
-{{ v["state"] }}{% if v["fail_reason"] %} — {{ v["fail_reason"] }}{% endif %}</p>
+{% extends "base.html" %}{% block title %}{{ v["title"] or v["id"] }} — yt-k{% endblock %}
+{% block body %}
+<div style="max-width:720px">
 
-<div style="display:flex;gap:1.5rem;align-items:flex-start;margin:1.2rem 0">
-{% if v["thumb_path"] %}<img src="/thumb/{{ v['id'] }}.jpg" alt="" width="320"
-  style="border-radius:6px;border:1px solid var(--line)">{% endif %}
-<div style="flex:1">
+<p style="margin:0 0 1rem"><a class="dim" href="/" style="font-size:12.5px">← library</a></p>
+
+<div class="hero">{% if has_thumb %}<img src="/thumb/{{ v['id'] }}.jpg" alt="">{% endif %}</div>
+
+<h1>{{ v["title"] or v["id"] }}</h1>
+<div class="meta" style="margin:.9rem 0 0">
+  <span>{{ v["channel"] or "unknown channel" }}</span>
+  <span>{{ v["published_at"] or "—" }}</span>
+  <span>{{ (v["duration_s"] or 0)//60 }} min</span>
+  <span class="s-{{ v['state'] }}">{{ v["state"] }}</span>
+  <a class="link" href="https://youtu.be/{{ v['id'] }}">watch on youtube</a>
+</div>
+{% if v["fail_reason"] and v["state"] == "failed" %}<p class="dim" style="font-size:12.5px;margin:.6rem 0 0">{{ v["fail_reason"] }}</p>{% endif %}
+
+<hr style="border:0;border-top:1px solid var(--rule);margin:1.7rem 0 1.5rem">
+
 {% if s %}
-  <p><b>{{ s["headline"] }}</b></p>
-  <ul style="padding-left:1.1rem">
-  {% for b in bullets %}<li><a href="https://youtu.be/{{ v['id'] }}?t={{ b[0] }}"
-     class="dim">{{ b[0]//60 }}:{{ "%02d"|format(b[0]%60) }}</a> {{ b[1] }}</li>{% endfor %}
-  </ul>
-  {% if s["tags_json"] %}<p class="dim">{{ s["tags_json"] }}</p>{% endif %}
+  <p class="lede">{{ s["headline"] }}</p>
+  {% if bullets %}<ul class="notes">
+    {% for b in bullets %}<li><a class="ts" href="https://youtu.be/{{ v['id'] }}?t={{ b[0] }}">{{ b[0]//60 }}:{{ "%02d"|format(b[0]%60) }}</a>
+      <span>{{ b[1] }}</span></li>{% endfor %}
+  </ul>{% endif %}
+  {% if s["keywords_json"] %}<p class="dim" style="font-size:12.5px;margin-top:1.2rem">{{ s["keywords_json"] }}</p>{% endif %}
+  {% if s["tags_json"] %}<p class="dim" style="font-size:12.5px">{{ s["tags_json"] }}</p>{% endif %}
 {% else %}
   <p class="dim">No summary yet.</p>
 {% endif %}
-</div></div>
 
-{% if chapters %}<h3 style="font-weight:500">Chapters</h3>
-<ul class="dim" style="padding-left:1.1rem">
-{% for c in chapters %}<li><a href="https://youtu.be/{{ v['id'] }}?t={{ c[0]|int }}">{{ c[0]|int//60 }}:{{ "%02d"|format(c[0]|int%60) }}</a> {{ c[1] }}</li>{% endfor %}
+{% if chapters %}<h3>Chapters</h3>
+<ul class="notes small">
+{% for c in chapters %}<li><a class="ts" href="https://youtu.be/{{ v['id'] }}?t={{ c[0]|int }}">{{ c[0]|int//60 }}:{{ "%02d"|format(c[0]|int%60) }}</a>
+  <span>{{ c[1] }}</span></li>{% endfor %}
 </ul>{% endif %}
 
 {% if segments %}
-<details><summary class="dim">Transcript ({{ segments|length }} lines)</summary>
-<div class="dim" style="font-size:12px;margin-top:.6rem;line-height:1.65">
-{% for g in segments %}<span style="color:var(--line)">{{ g[0]|int//60 }}:{{ "%02d"|format(g[0]|int%60) }}</span> {{ g[1] }}<br>{% endfor %}
-</div></details>{% endif %}
+<h3>Transcript</h3>
+<details><summary class="dim" style="font-size:12.5px;cursor:pointer">{{ segments|length }} lines</summary>
+<ul class="notes small" style="margin-top:.9rem">
+{% for g in segments %}<li><a class="ts" href="https://youtu.be/{{ v['id'] }}?t={{ g[0]|int }}">{{ g[0]|int//60 }}:{{ "%02d"|format(g[0]|int%60) }}</a>
+  <span>{{ g[1] }}</span></li>{% endfor %}
+</ul></details>{% endif %}
 
-<h3 style="font-weight:500">Watch log</h3>
-<table><thead><tr><th>When</th><th class="num">Dwell</th><th>Source</th></tr></thead><tbody>
+<h3>Watch log</h3>
+<table><tbody>
 {% for w in watches %}<tr><td>{{ w["watched_at"] }}</td>
 <td class="num">{{ (w["dwell_s"]//60 ~ " min") if w["dwell_s"] else "—" }}</td>
 <td class="dim">{{ w["sources"] }}</td></tr>{% endfor %}
 </tbody></table>
+
+</div>
 {% endblock %}
