@@ -9,7 +9,7 @@
 
 The archive, the worker and the digest generator all exist and run. What does not exist is an operator: nothing triggers collection or digest generation, the retry loop cannot tell a blocked IP from a bad video, and the digest reports numbers it cannot back. This pass makes the system truthful and self-driving before it makes it larger.
 
-Measured on 2026-11-10 against the live database: 1,954 videos — 141 ready (7.2%), 1,191 failed (60.9%), 564 archived (28.9%, of which 361 by the 30-minute ceiling), 53 no_caption. Last watch ingested 2026-11-01. One digest row ever: 2025-W31, html NULL. No launchd job, no crontab, no Hermes cron job and no compose service schedules collection or digest generation.
+Measured on 2026-11-10 against the live database: 1,954 videos — 141 ready (7.2%), 1,191 failed (60.9%), 564 archived (28.9%, of which 361 by the 30-minute ceiling), 53 no_caption. Last watch ingested 2026-11-01. One digest row ever: 2025-W31, html NULL. Re-measured at 22:55 after the metadata wall cleared: failed 325, pending 816, ready 193. No launchd job, no crontab, no Hermes cron job and no compose service schedules collection or digest generation.
 
 ## Analysis
 
@@ -84,3 +84,38 @@ Measured on 2026-11-10 against the live database: 1,954 videos — 141 ready (7.
 * A claim test: a `failed` row at the attempt limit is not claimed; one below it is.
 * A digest test: "N of M" uses the watched count, not the summarised count.
 * `/healthz` reports the newest watch date, so staleness is visible without reading the database.
+
+## Outcome (2026-11-10, 22:55)
+
+F1 answered before any code changed: `yt-dlp 2026.10.26` inside the container
+returns metadata for a row that had failed 24 times, so the wall was a window,
+not a permanent block. The caption endpoint still answers `IpBlocked`
+intermittently. The queue is draining on its own: failed 1,191 -> 325,
+pending 816, ready 193, and `ready` keeps climbing.
+
+Landed in one commit (525c395), 35 tests pass, deployed and healthy:
+
+* F2 — 20 consecutive failures pause the worker 900 s and print the reason on
+  `/queue`, instead of re-arming the same rows forever.
+* F3 — `last_week()` and `window()`: the digest takes the week that ended and
+  compares UTC instants converted from Berlin midnight. Four tests cover it.
+* F4 — the prompt states "N of M" (23 of 165 for 2026-W44), feeds two timestamped
+  bullets per video, asks for plain text, no longer writes `html`, and the page
+  shows the stored row's week.
+* F5 — `digest.loop()`: one check every six hours inside the app, previous week,
+  own connection, idempotent through the unique `week`.
+* F6 — `/digest/run` offloads to a thread with a thread-local connection, so the
+  event loop no longer blocks for the LLM.
+* F7 — `scripts/push_data.sh` deleted; it copied the laptop database over the
+  live one.
+* F9 — `/import` rejects bodies over 32 MB by Content-Length (chunked bodies
+  remain unbounded; noted in the code).
+* F10 — `running_since` cleared in `fail`, `finish` and `save_summary`.
+* F11 — MCP accepts the Tailscale host.
+
+Verified against the live service: `POST /digest/run {"week":"2026-W44"}` wrote
+2,638 characters, `video_count` 23, and the text opens with "This covers 23 of
+the 165 videos". The 2025-W31 row is untouched.
+
+F8 is half done: the baseline and the operations commit exist on the Mac; the
+NAS tree is still a tar copy with no commit stamp. N1-N6 are unchanged.
