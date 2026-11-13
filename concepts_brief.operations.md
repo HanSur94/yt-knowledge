@@ -169,3 +169,15 @@ a video is being digested, fed by `GET /v/<id>/status` every three seconds and
 reloading once the row reaches a terminal state. `progress.stage()` maps state to
 queued / transcribing / summarising / failed, because the LLM call is a single
 request and there is no finer progress to measure. Two tests cover the mapping.
+
+## Cookies do not fix the caption block (measured 2026-11-10)
+
+Implemented the plumbing (`YTK_COOKIES`, Netscape file, `http_client` session)
+and exported real cookies from Safari with `yt-dlp --cookies-from-browser`.
+Result: 782 cookies loaded, caption request still `IpBlocked`; through yt-dlp the
+subtitle CDN answers `HTTP Error 429` even with `--ignore-no-formats-error`.
+Cookies change who is asking, not which IP asks — the block is per-IP at the
+subtitle endpoint, so the only real lever is a different egress (proxy/VPN).
+The cookie file was deleted afterwards: a 148 KB session token store with no
+demonstrated benefit is a liability. The code path stays (tested) for
+age-restricted videos; drop a file at `/data/cookies.txt` if that ever matters.
