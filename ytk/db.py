@@ -289,9 +289,12 @@ def finish(conn, video_id: str, state: str, reason: str | None = None) -> None:
 def search(conn, q: str, limit: int = 30) -> list:
     """Two indexes, bucketed. bm25 across indexes is not comparable, so summary
     hits come first and transcript hits after, each deduped per video."""
-    term = '"' + q.replace('"', " ").strip() + '"'   # phrase; also neutralises syntax
-    if not q.strip():
+    # Every word must be present, adjacency not required. One quoted phrase made
+    # "distributed system" miss a line that said "system ... distributed".
+    words = [w for w in q.replace('"', " ").split() if w]
+    if not words:
         return []
+    term = " AND ".join(f'"{w}"' for w in words)
     rows = conn.execute("""
         SELECT v.id, v.title, v.channel, s.headline, 'summary' AS kind, 0.0 AS ts, '' AS hit
         FROM search_docs_fts f JOIN search_docs d ON d.id=f.rowid

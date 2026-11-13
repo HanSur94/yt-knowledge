@@ -60,6 +60,9 @@ async def lifespan(app):
         conn.close()
 
 
+VERSION = (Path("DEPLOYED").read_text().strip()
+           if Path("DEPLOYED").exists() else "dev")
+
 app = FastAPI(title="yt-knowledge", lifespan=lifespan)
 
 
@@ -73,7 +76,13 @@ def _bearer_ok(request: Request) -> bool:
     got = request.headers.get("authorization", "")
     if not got.startswith("Bearer "):
         return False
-    return hmac.compare_digest(got[7:], cfg.secret)
+    token = got[7:]
+    if hmac.compare_digest(token, cfg.secret):
+        return True
+    # A write-scoped token for the Mac collector: leaking it cannot log anyone in.
+    import_token = os.environ.get("YTK_IMPORT_TOKEN", "")
+    return (bool(import_token) and request.url.path.startswith("/import")
+            and hmac.compare_digest(token, import_token))
 
 
 @app.middleware("http")
@@ -91,6 +100,7 @@ async def gate(request: Request, call_next):
 
 # Added after the gate so it wraps it: the gate can then read request.session.
 app.add_middleware(SessionMiddleware, secret_key=cfg.secret, same_site="strict",
+                   max_age=7 * 24 * 3600,  # a week, not Starlette's default fortnight
                    https_only=False)      # LAN is plain HTTP; Secure would never stick
 
 
@@ -100,6 +110,9 @@ async def healthz(request: Request):
     paused, or a deliberate pause would mark the container unhealthy."""
     task = getattr(request.app.state, "task", None)
     return {"ok": True,
+            "version": VERSION,
+            "newest_watch": request.app.state.conn.execute(
+                "SELECT MAX(watched_at) FROM watches").fetchone()[0],
             "paused": worker.paused(cfg),
             "worker": task is not None and not task.done(),
             "blocked": db.blocked_count(request.app.state.conn),

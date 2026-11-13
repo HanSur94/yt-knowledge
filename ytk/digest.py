@@ -85,13 +85,13 @@ def generate(conn, force: bool = False, model: str | None = None,
                "What you got out of it\nThree to eight lines, each one a claim or fact "
                "worth keeping, attributed to the video it came from. Use only the "
                "material above. No filler."}]
-    text = summarize.call(prompt, timeout=240)
+    text, answered = summarize.call(prompt, timeout=240)
     conn.execute("""INSERT INTO digests(week, generated_at, markdown, model, video_count)
                     VALUES (?,?,?,?,?)
                     ON CONFLICT(week) DO UPDATE SET generated_at=excluded.generated_at,
                       markdown=excluded.markdown, model=excluded.model,
                       video_count=excluded.video_count""",
-                 (week, db.now_iso(), text, model or "auto", len(rows)))
+                 (week, db.now_iso(), text, model or answered, len(rows)))
     return {"week": week, "generated": True, "video_count": len(rows),
             "watched": watched, "markdown": text}
 

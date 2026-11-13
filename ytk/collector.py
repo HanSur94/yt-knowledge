@@ -134,7 +134,8 @@ def push(rows: list, url: str, token: str, batch: int = 500) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ytk collector")
     ap.add_argument("--push", metavar="URL", help="base URL of the service")
-    ap.add_argument("--token", default=os.environ.get("YTK_SECRET"))
+    ap.add_argument("--token", default=os.environ.get("YTK_IMPORT_TOKEN")
+                                          or os.environ.get("YTK_SECRET"))
     ap.add_argument("--dry-run", action="store_true", default=True)
     a = ap.parse_args(argv)
     rows = collect()
@@ -143,7 +144,7 @@ def main(argv=None) -> int:
         print("dry run: nothing sent")
         return 0
     if not a.token:
-        print("missing --token or YTK_SECRET", file=sys.stderr)
+        print("missing --token, YTK_IMPORT_TOKEN or YTK_SECRET", file=sys.stderr)
         return 2
     print(json.dumps(push(rows, a.push, a.token), indent=2))
     return 0

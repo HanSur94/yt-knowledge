@@ -12,3 +12,4 @@ shots/
 *.sqlite-wal
 *.sqlite-shm
 .DS_Store
+DEPLOYED

@@ -78,7 +78,7 @@ def parse(reply: str) -> dict:
             "short_en": (d.get("short_en") or d["headline"]).strip()}
 
 
-def call(messages, timeout=180) -> str:
+def call(messages, timeout=180) -> tuple[str, str]:
     base = os.environ.get("YTK_LLM_BASE", "").rstrip("/")
     model = os.environ.get("YTK_LLM_MODEL", "")
     if not base or not model:
@@ -97,7 +97,10 @@ def call(messages, timeout=180) -> str:
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 d = json.loads(r.read())
-            return d["choices"][0]["message"]["content"]
+            # The response names the model that actually answered; the env var
+            # only names what was asked for.
+            return (d["choices"][0]["message"]["content"],
+                    d.get("model") or model)
         except urllib.error.HTTPError:
             raise                       # 4xx/5xx: retrying the same body will not help
         except OSError as exc:
@@ -109,9 +112,12 @@ def call(messages, timeout=180) -> str:
 
 
 def summarize(video, segments, chapters, skips) -> dict:
-    reply = call(build_prompt(video, segments, chapters, skips))
+    reply, answered = call(build_prompt(video, segments, chapters, skips))
     try:
-        return parse(reply)
+        out = parse(reply)
     except ValueError:
-        return parse(call(build_prompt(video, segments, chapters, skips) +
-                          [{"role": "user", "content": "Return valid JSON only."}]))
+        reply, answered = call(build_prompt(video, segments, chapters, skips) +
+                               [{"role": "user", "content": "Return valid JSON only."}])
+        out = parse(reply)
+    out["model"] = answered
+    return out

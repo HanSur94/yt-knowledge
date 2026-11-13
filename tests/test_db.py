@@ -116,3 +116,11 @@ def test_save_summary_without_a_model_key(conn):
         "short_en": "H", "title": "T", "channel": "C"})
     row = conn.execute("SELECT model, headline FROM summaries").fetchone()
     assert row["headline"] == "H" and row["model"]
+
+
+def test_search_matches_words_in_any_order(conn):
+    """The archive is asked questions, not quoted phrases."""
+    v(conn)
+    db.save_fetch(conn, "dQw4w9WgXcQ", {"title": "T", "channel": "C"},
+                  [(1.0, "a confusing acquisition for the team")], [], [])
+    assert len(db.search(conn, "acquisition confusing")) == 1

@@ -88,3 +88,51 @@ Video length limits, pause, retry and export are also live in the UI at
 uv venv && uv pip install -e ".[dev]"
 .venv/bin/pytest -q
 ```
+
+## Operating it
+
+### Weekly digest
+
+Runs inside the app: every six hours it generates the previous ISO week. A week
+with nothing summarised costs no LLM call. Manual run:
+
+```sh
+curl -H "Authorization: Bearer $YTK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"week":"2026-W44","force":true}' http://192.168.178.40:8499/digest/run
+```
+
+### Collector (watch history, Mac only)
+
+`scripts/collect_push.sh` reads the import token from the Keychain
+(`ytk-import`) and pushes browser history. It is installed as a LaunchAgent
+(`com.hannes.ytk-collector`, daily 21:10):
+
+```sh
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.hannes.ytk-collector.plist
+launchctl kickstart -k gui/$UID/com.hannes.ytk-collector
+tail ~/Library/Logs/ytk-collector.log
+```
+
+If the log reports zero visits, the job cannot read the browser database: grant
+Full Disk Access to `/bin/sh` (System Settings → Privacy & Security), or run the
+script once from Terminal, which already has it.
+
+### Restore a backup
+
+```sh
+cd /volume1/docker/yt-knowledge/src && docker compose stop ytk
+cp /volume1/docker/yt-knowledge/backups/ytk-YYYY-MM-DD.sqlite \
+   /volume1/docker/yt-knowledge/data/ytk.sqlite
+rm -f /volume1/docker/yt-knowledge/data/ytk.sqlite-wal \
+      /volume1/docker/yt-knowledge/data/ytk.sqlite-shm
+chown 1000:10 /volume1/docker/yt-knowledge/data/ytk.sqlite
+docker compose start ytk && curl -s http://127.0.0.1:8499/healthz
+```
+
+The app refuses to start on a schema version it does not know (`PRAGMA
+user_version`), so an old snapshot fails loudly instead of migrating halfway.
+
+### What is deployed
+
+Every deploy copies `git archive HEAD` and writes that commit to `DEPLOYED`.
+`/healthz` returns it as `version`, so the running code is identifiable.
