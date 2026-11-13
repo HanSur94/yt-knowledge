@@ -161,3 +161,11 @@ fetched.
 Proof: after the deploy (f2fa0b1) the loop ran on startup and created 2026-W45
 on its own — 2 videos, 1,844 characters. Two of ninety-nine, because only 193
 videos in the archive have summaries; the digest is not the bottleneck.
+
+## Pipeline bar (small feature, no gate needed)
+
+A concrete request, so no brainstorm round: `/v/<id>` now shows a stage bar while
+a video is being digested, fed by `GET /v/<id>/status` every three seconds and
+reloading once the row reaches a terminal state. `progress.stage()` maps state to
+queued / transcribing / summarising / failed, because the LLM call is a single
+request and there is no finer progress to measure. Two tests cover the mapping.
