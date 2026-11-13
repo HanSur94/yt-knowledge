@@ -35,6 +35,10 @@ async def lifespan(app):
     if os.environ.get("YTK_WORKER", "1") != "0":
         task = asyncio.create_task(worker.run(cfg, stop))
     app.state.task = task
+    digest_task = None
+    if os.environ.get("YTK_LLM_BASE"):
+        digest_task = asyncio.create_task(digest.loop(cfg, stop))
+    app.state.digest_task = digest_task
     try:
         # The mounted sub-app's own lifespan never runs, so its session manager
         # must be started here or every MCP request raises "Task group is not
@@ -49,6 +53,10 @@ async def lifespan(app):
                 await task
             except (asyncio.CancelledError, RuntimeError):
                 pass
+        if digest_task:
+            digest_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError):
+                await digest_task
         conn.close()
 
 
@@ -195,12 +203,12 @@ async def digest_page(request: Request, week: str = ""):
     else:
         row = conn.execute("SELECT * FROM digests ORDER BY week DESC LIMIT 1").fetchone()
     return templates.TemplateResponse(request, "digest.html",
-                                      {"d": row, "week": week or digest.week_of()[2]})
+                                      {"d": row, "week": row["week"] if row
+                                       else digest.week_of()[2]})
 
 
 @app.post("/digest/run")
 async def digest_run(request: Request):
-    conn = request.app.state.conn
     is_form = _is_form(request)
     body = {}
     if not is_form:
@@ -208,9 +216,17 @@ async def digest_run(request: Request):
             body = await request.json()
         except ValueError:      # no body: treat as a plain run
             body = {}
+    def _blocking():
+        # Own connection: the app's is opened check_same_thread=True, and
+        # digest.generate runs in a worker thread.
+        conn = db.connect(cfg.db, same_thread=False)
+        try:
+            return digest.generate(conn, force=bool(body.get("force")) or is_form,
+                                   week_arg=body.get("week") or None)
+        finally:
+            conn.close()
     try:
-        out = digest.generate(conn, force=bool(body.get("force")) or is_form,
-                              week_arg=body.get("week") or None)
+        out = await asyncio.to_thread(_blocking)
     except RuntimeError as exc:                     # no endpoint configured
         return JSONResponse({"error": str(exc)}, status_code=503)
     except (TimeoutError, OSError) as exc:          # the LLM did not answer in time
@@ -301,6 +317,9 @@ async def queue(request: Request):
 @app.post("/import")
 async def import_(request: Request):
     conn = request.app.state.conn
+    # ponytail: Content-Length only; a chunked body can still be unbounded.
+    if int(request.headers.get("content-length") or 0) > 32 * 1024 * 1024:
+        return JSONResponse({"error": "body larger than 32 MB"}, status_code=413)
     ctype = request.headers.get("content-type", "")
     if ctype.startswith("multipart/form-data"):
         form = await request.form()

@@ -19,7 +19,8 @@ inner = mcp.streamable_http_app(
     streamable_http_path="/mcp",
     transport_security=TransportSecuritySettings(
         allowed_hosts=[f"127.0.0.1:{PORT}", f"localhost:{PORT}",
-                       f"192.168.178.40:{PORT}", f"nas:{PORT}", "ytk:8488"],
+                       f"192.168.178.40:{PORT}", f"100.76.52.49:{PORT}",
+                       f"nas:{PORT}", "ytk:8488"],
         allowed_origins=["*"]))
 
 

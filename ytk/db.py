@@ -260,8 +260,8 @@ def save_summary(conn, video_id: str, s: dict) -> None:
                   " ".join(b[1] for b in s["bullets"]), s["short_en"]))
     # The same clearing as finish(): this path reaches 'ready' without
     # going through it, and used to leave a dead error on a healthy row.
-    conn.execute("UPDATE videos SET state='ready', fail_stage=NULL, fail_reason=NULL "
-                 "WHERE id=?", (video_id,))
+    conn.execute("UPDATE videos SET state='ready', running_since=NULL, "
+                 "fail_stage=NULL, fail_reason=NULL WHERE id=?", (video_id,))
 
 
 def fail(conn, video_id: str, stage: str, reason: str) -> int:
@@ -269,7 +269,8 @@ def fail(conn, video_id: str, stage: str, reason: str) -> int:
     # Cap it: uncapped, attempts=12 means 68 hours, and the only recovery is a
     # human clicking retry. An unattended service cannot depend on that.
     delay = min(60 * 2 ** attempts, 3600)
-    conn.execute("""UPDATE videos SET state='failed', fail_stage=?, fail_reason=?,
+    conn.execute("""UPDATE videos SET state='failed', running_since=NULL,
+                    fail_stage=?, fail_reason=?,
                     attempts=?, next_attempt_at=? WHERE id=?""",
                  (stage, reason[:500], attempts,
                   int(datetime.now(UTC).timestamp()) + delay, video_id))
@@ -280,7 +281,8 @@ def finish(conn, video_id: str, state: str, reason: str | None = None) -> None:
     """fail_stage must go too: a stale stage on a live row reads as a live error
     on the video page, which is how 'KeyError: model' kept showing up on videos
     that had already succeeded."""
-    conn.execute("UPDATE videos SET state=?, fail_stage=NULL, fail_reason=? WHERE id=?",
+    conn.execute("UPDATE videos SET state=?, running_since=NULL, fail_stage=NULL, "
+                 "fail_reason=? WHERE id=?",
                  (state, reason, video_id))
 
 

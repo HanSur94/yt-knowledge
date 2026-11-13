@@ -8,6 +8,8 @@ import traceback
 from . import db, fetch, summarize
 
 BLOCK_PAUSE = 300   # seconds; a block is global, so rest the whole worker
+FAIL_PAUSE = 900    # a run of failures at one stage is a condition, not 20 bad rows
+MAX_FAIL_STREAK = 20
 
 # Published so /queue can say "resting 4:12" instead of "idle". Module-level
 # because there is exactly one worker; a second one would need a real registry.
@@ -97,7 +99,7 @@ def _tick(conn, cfg) -> str | None:
         stage = "fetch" if not conn.execute(
             "SELECT 1 FROM segments WHERE video_id=? LIMIT 1", (vid,)).fetchone() else "summarize"
         db.fail(conn, vid, stage, f"{type(exc).__name__}: {exc}")
-        return vid
+        return f"failed:{stage}"
 
 
 def _duration_skip(duration_s, floor: int, ceiling: int) -> str | None:
@@ -130,6 +132,7 @@ async def run(cfg, stop: asyncio.Event):
 
 
 async def _loop(conn, cfg, stop: asyncio.Event):
+    streak = 0
     while not stop.is_set():
         if paused(cfg):
             # asyncio, not time.sleep: the web server shares this event loop.
@@ -144,6 +147,22 @@ async def _loop(conn, cfg, stop: asyncio.Event):
         except Exception:  # noqa: BLE001 - the loop outlives its failures
             traceback.print_exc()
             done = None
+        if isinstance(done, str) and done.startswith("failed"):
+            streak += 1
+            if streak >= MAX_FAIL_STREAK:
+                print(f"  {streak} consecutive failures - pausing {FAIL_PAUSE}s",
+                      flush=True)
+                STATE["blocked_until"] = time.time() + FAIL_PAUSE
+                STATE["reason"] = f"{streak} failures in a row: {done}"
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=FAIL_PAUSE)
+                except TimeoutError:
+                    pass
+                STATE["blocked_until"] = 0.0
+                STATE["reason"] = ""
+                streak = 0
+        else:
+            streak = 0
         if isinstance(done, str) and done.startswith("blocked"):
             print(f"  {done} - pausing {BLOCK_PAUSE}s", flush=True)
             STATE["blocked_until"] = time.time() + BLOCK_PAUSE
