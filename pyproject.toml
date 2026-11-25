@@ -15,7 +15,9 @@ dependencies = [
 
 [project.optional-dependencies]
 collector = ["browser-history>=0.5"]
-asr = ["faster-whisper>=1.1"]
+# av 19 removed av.open(metadata_errors=...), which faster-whisper 1.2.1 passes:
+# every transcription raised TypeError on the first deploy.
+asr = ["faster-whisper>=1.1", "av<19"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]

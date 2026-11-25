@@ -5,7 +5,7 @@ COPY pyproject.toml ./
 COPY ytk ./ytk
 COPY scripts ./scripts
 COPY DEPLOYED ./DEPLOYED
-RUN pip install --no-cache-dir ".[asr]"
+RUN pip install --no-cache-dir ".[asr]" && python scripts/asr_smoke.py
 RUN mkdir -p /data
 VOLUME /data
 # Whisper weights live on the volume: downloaded once on first use, not per build.
