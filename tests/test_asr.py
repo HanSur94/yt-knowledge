@@ -1,5 +1,7 @@
 """The speech-recognition fallback: when it runs, when it must not, and that
 the row it produces looks like any other transcript."""
+import time
+
 import pytest
 
 from ytk import asr, db, fetch, worker
@@ -140,3 +142,63 @@ def test_v5_database_gains_the_column(tmp_path):
     assert c.execute("PRAGMA user_version").fetchone()[0] == 6
     assert dict(c.execute("SELECT id, transcript_source FROM videos").fetchall()) == {
         "a": "captions", "b": None}
+
+
+def test_interrupted_row_goes_to_the_back_then_is_parked(conn):
+    """A row that kills the process must not be resumed first for ever."""
+    db.upsert_video(conn, {"video_id": "aaaaaaaaaaa", "title": "T", "channel": "C"})
+    db.upsert_video(conn, {"video_id": "bbbbbbbbbbb", "title": "T", "channel": "C"})
+    assert db.claim_next(conn)["id"] == "aaaaaaaaaaa"
+    assert db.resume_stuck(conn) == 1
+    row = conn.execute("SELECT state, attempts, fail_stage FROM videos "
+                       "WHERE id='aaaaaaaaaaa'").fetchone()
+    assert tuple(row) == ("pending", 1, "interrupted")
+    # the next claim is someone else, not the row that just died
+    assert db.claim_next(conn)["id"] == "bbbbbbbbbbb"
+    db.resume_stuck(conn)
+    # second death in a row: parked, not resumed
+    conn.execute("UPDATE videos SET next_attempt_at=0 WHERE id='aaaaaaaaaaa'")
+    assert db.claim_next(conn)["id"] == "aaaaaaaaaaa"
+    db.resume_stuck(conn)
+    state, until = conn.execute("SELECT state, next_attempt_at FROM videos "
+                                "WHERE id='aaaaaaaaaaa'").fetchone()
+    assert state == "failed" and until > time.time() + 6 * 86400
+
+
+def _wav(path, seconds, rate=16000):
+    import math
+    import struct
+    import wave
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(i / 7)))
+                               for i in range(int(seconds * rate))))
+
+
+def test_chunks_cover_the_audio_without_loss(tmp_path):
+    pytest.importorskip("av")
+    p = tmp_path / "a.wav"
+    _wav(p, 7.5, rate=44100)                 # resampled to 16 kHz on the way
+    got = list(asr.chunks(str(p), 2))
+    assert [o for o, _ in got] == [0.0, 2.0, 4.0, 6.0]
+    assert [len(a) for a, in [(a,) for _, a in got]][:3] == [32000] * 3
+    total = sum(len(a) for _, a in got)
+    assert abs(total - 7.5 * 16000) < 200    # resampler edge, not lost audio
+    assert all(a.dtype.name == "float32" and abs(a).max() <= 1.0 for _, a in got)
+
+
+def test_chunk_timestamps_are_offset(monkeypatch, tmp_path):
+    """Each window restarts at 0 inside Whisper; the archive needs video time."""
+    class Seg:
+        def __init__(self, start, text):
+            self.start, self.text = start, text
+
+    class Model:
+        def transcribe(self, audio, language=None, **_):
+            return iter([Seg(1.0, " hi ")]), type("I", (), {"language": "de"})()
+
+    monkeypatch.setattr(asr, "_load", lambda: Model())
+    monkeypatch.setattr(asr, "chunks", lambda path, s: iter([(0.0, None), (300.0, None)]))
+    assert asr.transcribe("x", None) == ([(1.0, "hi"), (301.0, "hi")], "de")

@@ -27,6 +27,8 @@ MODELS_DIR = os.environ.get("YTK_WHISPER_DIR") or None
 # Smallest audio stream first: speech recognition resamples to 16 kHz mono, so
 # a 50 kbit/s opus track carries everything Whisper can use.
 AUDIO_FORMAT = "249/250/worstaudio/bestaudio"
+SAMPLE_RATE = 16000
+CHUNK_S = int(os.environ.get("YTK_WHISPER_CHUNK_S") or "300")
 
 _model = None
 _lock = threading.Lock()
@@ -97,13 +99,61 @@ def transcribe(path: str, language: str | None) -> tuple[list[tuple[float, str]]
     """
     model = _load()
     lang = (language or "").split("-")[0].lower() or None
-    segments, info = model.transcribe(
-        path, language=lang, task="transcribe", beam_size=1, vad_filter=True,
-        language_detection_segments=4, condition_on_previous_text=False)
-    out = [(round(float(s.start), 2), s.text.strip()) for s in segments if s.text.strip()]
+    out = []
+    for offset, audio in chunks(path, CHUNK_S):
+        segments, info = model.transcribe(
+            audio, language=lang, task="transcribe", beam_size=1, vad_filter=True,
+            language_detection_segments=4, condition_on_previous_text=False)
+        out += [(round(offset + float(s.start), 2), s.text.strip())
+                for s in segments if s.text.strip()]
+        # Detected once, then held: a chunk of music or silence must not flip
+        # the rest of the video into another language.
+        lang = lang or info.language
     if not out:
         raise fetch.NoCaption("no speech detected")
-    return out, info.language
+    return out, lang
+
+
+def chunks(path: str, seconds: int):
+    """Yield (offset_s, float32 mono 16 kHz array) windows of `seconds` each.
+
+    faster-whisper's own decode_audio holds the whole file in memory several
+    times over: a 51-minute video passed 1 GB on the N100 NAS and the kernel
+    killed the process (exit 137) on every attempt. Streaming the decode keeps
+    the peak at one window (5 min = 19 MB) whatever the video's length.
+    """
+    import av
+    import numpy as np
+
+    limit = seconds * SAMPLE_RATE
+    resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono",
+                                                  rate=SAMPLE_RATE)
+    buf, have, offset = [], 0, 0.0
+
+    def flush(n):
+        nonlocal buf, have, offset
+        joined = np.concatenate(buf)
+        window, rest = joined[:n], joined[n:]
+        buf, have = ([rest] if len(rest) else []), len(rest)
+        start, offset = offset, offset + n / SAMPLE_RATE
+        return start, window.astype(np.float32) / 32768.0
+
+    with av.open(path, mode="r") as container:
+        for frame in container.decode(audio=0):
+            try:
+                resampled = resampler.resample(frame)
+            except av.error.InvalidDataError:
+                continue                       # one corrupt frame is not the video
+            for f in resampled:
+                buf.append(f.to_ndarray().reshape(-1))
+                have += buf[-1].size
+                while have >= limit:
+                    yield flush(limit)
+        for f in resampler.resample(None):     # drain the resampler's tail
+            buf.append(f.to_ndarray().reshape(-1))
+            have += buf[-1].size
+    if have:
+        yield flush(have)
 
 
 def transcript(video_id: str, language: str | None) -> tuple[list[tuple[float, str]], str]:

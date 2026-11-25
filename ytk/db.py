@@ -210,9 +210,32 @@ RETURNING *;
 
 def resume_stuck(conn) -> int:
     """One worker, so any 'running' row at startup was interrupted by a stop.
-    Without this the row is invisible forever."""
-    return conn.execute("UPDATE videos SET state='pending', running_since=NULL "
-                        "WHERE state='running'").rowcount
+    Without this the row is invisible forever.
+
+    The stop may have been the row's own fault: a transcription that ran the
+    NAS out of memory was killed (exit 137), resumed first on restart, and
+    killed the process again, six times in twenty minutes. So an interrupted
+    row goes to the back of the queue with an attempt counted, and a row
+    interrupted twice in a row is parked as failed for a week."""
+    now = int(datetime.now(UTC).timestamp())
+    rows = conn.execute("SELECT id, attempts, fail_stage FROM videos "
+                        "WHERE state='running'").fetchall()
+    for r in rows:
+        attempts = r["attempts"] + 1
+        if r["fail_stage"] == "interrupted":
+            conn.execute("""UPDATE videos SET state='failed', running_since=NULL,
+                            attempts=?, next_attempt_at=?, fail_reason=?
+                            WHERE id=?""",
+                         (attempts, now + 7 * 86400,
+                          "interrupted twice in a row (process killed, likely out of memory)",
+                          r["id"]))
+        else:
+            conn.execute("""UPDATE videos SET state='pending', running_since=NULL,
+                            attempts=?, next_attempt_at=?, fail_stage='interrupted',
+                            fail_reason='process stopped while this row was running'
+                            WHERE id=?""",
+                         (attempts, now + min(60 * 2 ** attempts, 3600), r["id"]))
+    return len(rows)
 
 
 def claim_next(conn, now: int | None = None):
