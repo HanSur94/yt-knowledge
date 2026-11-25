@@ -59,6 +59,20 @@ The default port is 8499 because 8484–8491 are usually taken on a home NAS.
 | `YTK_LLM_BASE` | unset | OpenAI-compatible base URL; unset = transcripts only |
 | `YTK_LLM_MODEL` | unset | model name for summaries |
 | `YTK_EXPORT` | `<db dir>/export` | markdown export root |
+| `YTK_WHISPER` | `1` | `0` disables the speech-recognition fallback |
+| `YTK_WHISPER_MODEL` | `small` | faster-whisper model (`base`, `small`, `medium`, `large-v3-turbo`) |
+| `YTK_WHISPER_THREADS` | `4` | CPU threads for transcription |
+| `YTK_WHISPER_DIR` | `/data/models` in the image | where model weights are cached |
+
+### When YouTube blocks captions
+
+YouTube throttles its caption endpoint per IP, but not the audio stream. When
+captions are blocked or missing, the worker downloads the smallest audio track
+and transcribes it locally with faster-whisper (in the image; locally
+`pip install -e ".[asr]"`). After one caption block it goes straight to audio
+for 30 minutes. Each video records where its text came from in
+`videos.transcript_source` (`captions` or `whisper`). The model is downloaded
+once into `YTK_WHISPER_DIR` on first use. `small` needs about 1–3 GB RAM.
 
 Video length limits, pause, retry and export are also live in the UI at
 `/settings` and `/queue` — no restart needed.

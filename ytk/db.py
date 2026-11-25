@@ -4,7 +4,7 @@ import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 STATE = ("pending", "running", "fetched", "ready", "failed", "no_caption", "archived")
 
 SCHEMA = """
@@ -18,7 +18,8 @@ CREATE TABLE videos(
   next_attempt_at INTEGER,
   fail_stage TEXT, fail_reason TEXT,
   running_since TEXT,
-  first_seen TEXT NOT NULL, last_seen TEXT NOT NULL
+  first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+  transcript_source TEXT
 );
 CREATE INDEX idx_videos_state ON videos(state);
 
@@ -110,6 +111,12 @@ MIGRATIONS = {
     2: ["ALTER TABLE summaries ADD COLUMN keywords_json TEXT"],
     3: ["CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)"],
     4: ["ALTER TABLE videos ADD COLUMN running_since TEXT"],
+    # init() runs MIGRATIONS[found] on the step found -> found+1, so this key
+    # is the version being upgraded *from*: v5 -> v6.
+    5: ["ALTER TABLE videos ADD COLUMN transcript_source TEXT",
+        # Every transcript before this column came from the caption endpoint.
+        ("UPDATE videos SET transcript_source='captions' WHERE id IN "
+         "(SELECT DISTINCT video_id FROM segments)")],
 }
 
 

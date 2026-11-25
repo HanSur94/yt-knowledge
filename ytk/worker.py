@@ -5,15 +5,16 @@ import os
 import time
 import traceback
 
-from . import db, fetch, summarize
+from . import asr, db, fetch, summarize
 
 BLOCK_PAUSE = 300   # seconds; a block is global, so rest the whole worker
 FAIL_PAUSE = 900    # a run of failures at one stage is a condition, not 20 bad rows
 MAX_FAIL_STREAK = 20
+CAPTION_REST = 1800  # after a caption block, go straight to audio this long
 
 # Published so /queue can say "resting 4:12" instead of "idle". Module-level
 # because there is exactly one worker; a second one would need a real registry.
-STATE = {"blocked_until": 0.0, "reason": ""}
+STATE = {"blocked_until": 0.0, "reason": "", "captions_blocked_until": 0.0}
 
 
 def resting_now() -> float:
@@ -57,7 +58,7 @@ def _tick(conn, cfg) -> str | None:
                 db.finish(conn, vid, "archived", skip)
                 return vid
             try:
-                segments = fetch.transcript(vid, ("de", "en"))
+                segments, source = _transcript(vid, meta)
             except fetch.NoCaption:
                 db.save_fetch(conn, vid, meta, [], [], meta["chapters"])
                 db.finish(conn, vid, "no_caption", None)
@@ -65,6 +66,7 @@ def _tick(conn, cfg) -> str | None:
             skips = _safe(fetch.sponsors, vid, default=[])
             path = _safe(fetch.thumbnail, vid, cfg.thumbs, default=None)
             db.save_fetch(conn, vid, meta, segments, skips, meta["chapters"])
+            conn.execute("UPDATE videos SET transcript_source=? WHERE id=?", (source, vid))
             if path:
                 conn.execute("UPDATE videos SET thumb_path=? WHERE id=?", (path, vid))
         db.finish(conn, vid, "fetched")
@@ -100,6 +102,29 @@ def _tick(conn, cfg) -> str | None:
             "SELECT 1 FROM segments WHERE video_id=? LIMIT 1", (vid,)).fetchone() else "summarize"
         db.fail(conn, vid, stage, f"{type(exc).__name__}: {exc}")
         return f"failed:{stage}"
+
+
+def _transcript(vid: str, meta: dict) -> tuple[list, str]:
+    """Captions first, speech recognition when YouTube will not give them.
+
+    Captions are cheap and exact, so they stay first. A caption block is per
+    IP, not per video: once one answers Blocked, the next CAPTION_REST seconds
+    go straight to audio instead of paying a doomed caption request per row.
+    Without the ASR extra installed, every path raises exactly as before.
+    """
+    if time.time() >= STATE["captions_blocked_until"]:
+        try:
+            return fetch.transcript(vid, ("de", "en")), "captions"
+        except fetch.NoCaption:
+            if not asr.enabled():
+                raise
+        except fetch.Blocked:
+            if not asr.enabled():
+                raise
+            STATE["captions_blocked_until"] = time.time() + CAPTION_REST
+    segments, lang = asr.transcript(vid, meta.get("language"))
+    meta["language"] = meta.get("language") or lang
+    return segments, "whisper"
 
 
 def _duration_skip(duration_s, floor: int, ceiling: int) -> str | None:

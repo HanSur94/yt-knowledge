@@ -100,7 +100,7 @@ def test_settings_defaults_and_roundtrip(conn):
 
 
 def test_schema_is_current_with_a_settings_table(conn):
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
 
 
 def test_duration_window():
