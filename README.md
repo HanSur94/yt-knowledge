@@ -63,6 +63,7 @@ The default port is 8499 because 8484–8491 are usually taken on a home NAS.
 | `YTK_WHISPER_MODEL` | `small` | faster-whisper model (`base`, `small`, `medium`, `large-v3-turbo`) |
 | `YTK_WHISPER_THREADS` | `4` | CPU threads for transcription |
 | `YTK_WHISPER_DIR` | `/data/models` in the image | where model weights are cached |
+| `YTK_LANGUAGES` | `de,en` | languages Whisper may pick when a video has no language metadata; empty = any |
 
 ### When YouTube blocks captions
 

@@ -24,11 +24,17 @@ THREADS = int(os.environ.get("YTK_WHISPER_THREADS") or "4")
 # Where model weights are cached. Beside the database by default, so a container
 # downloads them once onto the volume instead of on every rebuild.
 MODELS_DIR = os.environ.get("YTK_WHISPER_DIR") or None
-# Smallest audio stream first: speech recognition resamples to 16 kHz mono, so
-# a 50 kbit/s opus track carries everything Whisper can use.
-AUDIO_FORMAT = "249/250/worstaudio/bestaudio"
+# The original-language track first, then the lowest bitrate of it: speech
+# recognition resamples to 16 kHz mono, so ~50 kbit/s carries all Whisper uses.
+# Language comes first on purpose. YouTube auto-dubs videos into a dozen
+# languages, and the old "249/worstaudio" picked the Arabic dub of an English
+# video: Whisper then transcribed 51 minutes of Arabic, faithfully.
+AUDIO_FORMAT = ["-f", "ba", "-S", "lang,+abr"]
 SAMPLE_RATE = 16000
 CHUNK_S = int(os.environ.get("YTK_WHISPER_CHUNK_S") or "300")
+# Languages a video without language metadata may be detected as.
+LANGUAGES = tuple(x.strip().lower() for x in
+                  (os.environ.get("YTK_LANGUAGES", "de,en")).split(",") if x.strip())
 
 _model = None
 _lock = threading.Lock()
@@ -50,7 +56,7 @@ def download_audio(video_id: str, directory: str, timeout: int = 600) -> str:
     """yt-dlp the smallest audio stream into `directory`. Raises fetch errors."""
     try:
         out = subprocess.run(
-            ["yt-dlp", "-q", "--no-warnings", "--no-playlist", "-f", AUDIO_FORMAT,
+            ["yt-dlp", "-q", "--no-warnings", "--no-playlist", *AUDIO_FORMAT,
              "-o", os.path.join(directory, "%(id)s.%(ext)s"),
              "--", video_id],
             capture_output=True, text=True, timeout=timeout, check=False)
@@ -101,6 +107,8 @@ def transcribe(path: str, language: str | None) -> tuple[list[tuple[float, str]]
     lang = (language or "").split("-")[0].lower() or None
     out = []
     for offset, audio in chunks(path, CHUNK_S):
+        if lang is None:
+            lang = pick_language(model, audio)
         segments, info = model.transcribe(
             audio, language=lang, task="transcribe", beam_size=1, vad_filter=True,
             language_detection_segments=4, condition_on_previous_text=False)
@@ -112,6 +120,23 @@ def transcribe(path: str, language: str | None) -> tuple[list[tuple[float, str]]
     if not out:
         raise fetch.NoCaption("no speech detected")
     return out, lang
+
+
+def pick_language(model, audio) -> str | None:
+    """Detect, but only among the languages this archive's owner watches.
+
+    Open-ended detection is not safe: on the NAS an English Coffeezilla video
+    was detected as Arabic and the whole 51 minutes came back as an Arabic
+    translation. Restricting the choice to YTK_LANGUAGES keeps a wrong guess
+    inside languages the reader understands. Empty YTK_LANGUAGES = no limit.
+    """
+    allowed = LANGUAGES
+    _, _, probs = model.detect_language(audio=audio, vad_filter=True,
+                                        language_detection_segments=4)
+    ranked = [code for code, _ in sorted(probs or [], key=lambda p: -p[1])]
+    if allowed:
+        ranked = [code for code in ranked if code in allowed] or list(allowed)
+    return ranked[0] if ranked else None
 
 
 def chunks(path: str, seconds: int):

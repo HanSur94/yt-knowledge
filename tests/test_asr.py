@@ -196,9 +196,53 @@ def test_chunk_timestamps_are_offset(monkeypatch, tmp_path):
             self.start, self.text = start, text
 
     class Model:
+        def detect_language(self, audio=None, **_):
+            return "de", 0.9, [("de", 0.9), ("en", 0.1)]
+
         def transcribe(self, audio, language=None, **_):
             return iter([Seg(1.0, " hi ")]), type("I", (), {"language": "de"})()
 
     monkeypatch.setattr(asr, "_load", lambda: Model())
     monkeypatch.setattr(asr, "chunks", lambda path, s: iter([(0.0, None), (300.0, None)]))
     assert asr.transcribe("x", None) == ([(1.0, "hi"), (301.0, "hi")], "de")
+
+
+class _Detects:
+    def __init__(self, probs):
+        self.probs = probs
+
+    def detect_language(self, audio=None, **_):
+        return self.probs[0][0], self.probs[0][1], self.probs
+
+
+def test_detection_stays_inside_the_watched_languages(monkeypatch):
+    """The NAS heard an English video as Arabic and transcribed it in Arabic."""
+    monkeypatch.setattr(asr, "LANGUAGES", ("de", "en"))
+    m = _Detects([("ar", 0.41), ("en", 0.38), ("de", 0.05)])
+    assert asr.pick_language(m, None) == "en"
+
+
+def test_detection_is_open_when_no_languages_are_set(monkeypatch):
+    monkeypatch.setattr(asr, "LANGUAGES", ())
+    assert asr.pick_language(_Detects([("ar", 0.41), ("en", 0.38)]), None) == "ar"
+
+
+def test_detection_falls_back_to_the_first_watched_language(monkeypatch):
+    monkeypatch.setattr(asr, "LANGUAGES", ("de", "en"))
+    assert asr.pick_language(_Detects([("ja", 0.9)]), None) == "de"
+
+
+def test_audio_download_prefers_the_original_track(monkeypatch, tmp_path):
+    """An auto-dubbed video lists a dozen audio tracks; the smallest one was
+    the Arabic dub of an English video."""
+    seen = {}
+
+    def run(cmd, **_):
+        seen["cmd"] = cmd
+        (tmp_path / "W4PIkmjwGsQ.m4a").write_bytes(b"x")
+        return type("R", (), {"returncode": 0, "stderr": ""})()
+    monkeypatch.setattr(asr.subprocess, "run", run)
+    assert asr.download_audio("W4PIkmjwGsQ", str(tmp_path)).endswith(".m4a")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("-S") + 1].startswith("lang")   # language before size
+    assert cmd[cmd.index("-f") + 1] == "ba"
