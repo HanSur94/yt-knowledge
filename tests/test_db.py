@@ -141,3 +141,56 @@ def test_fail_parks_a_hopeless_video(tmp_path):
     assert attempts == 20
     assert due - now >= 7 * 86400 - 5          # parked for a week, not one hour
     conn.close()
+
+
+def _two_videos(conn):
+    v(conn, "aaaaaaaaaaa")
+    v(conn, "bbbbbbbbbbb")
+    db.upsert_video(conn, {"video_id": "bbbbbbbbbbb", "title": "Other", "channel": "D"})
+    db.save_fetch(conn, "aaaaaaaaaaa", {"title": "T", "channel": "C"},
+                  [(10.0, "the acquisition closed"), (20.0, "nothing here"),
+                   (30.0, "a second acquisition <b>later</b>"), (40.0, "acquisition three")],
+                  [], [])
+    db.save_fetch(conn, "bbbbbbbbbbb", {"title": "Other", "channel": "D"},
+                  [(5.0, "one acquisition only")], [], [])
+
+
+def test_grouped_search_keeps_every_moment_of_a_video(conn):
+    """The old search kept one line per video and dropped where else it was said."""
+    _two_videos(conn)
+    r = db.search_grouped(conn, "acquisition", moments=2)
+    assert [x["id"] for x in r["videos"]] == ["aaaaaaaaaaa", "bbbbbbbbbbb"]
+    top = r["videos"][0]
+    ts = [m[0] for m in top["moments"]]
+    assert top["hits"] == 3 and len(ts) == 2 and ts == sorted(ts)   # best two, in time order
+    assert r["total_moments"] == 4
+    assert dict(r["channels"]) == {"C": 1, "D": 1}
+
+
+def test_grouped_search_escapes_text_and_marks_only_the_match(conn):
+    _two_videos(conn)
+    r = db.search_grouped(conn, "later")
+    html = str(r["videos"][0]["moments"][0][1])
+    assert "<b>" not in html and "&lt;b&gt;" in html
+    assert "<mark>later</mark>" in html
+
+
+def test_grouped_search_channel_filter_keeps_channel_counts(conn):
+    _two_videos(conn)
+    r = db.search_grouped(conn, "acquisition", channel="D")
+    assert [x["id"] for x in r["videos"]] == ["bbbbbbbbbbb"]
+    assert len(r["channels"]) == 2
+
+
+def test_grouped_search_matches_titles_by_whole_word(conn):
+    db.upsert_video(conn, {"video_id": "ccccccccccc", "title": "How to maintain a bike",
+                           "channel": "X"})
+    db.upsert_video(conn, {"video_id": "ddddddddddd", "title": "AI in 2026", "channel": "X"})
+    ids = [x["id"] for x in db.search_grouped(conn, "ai")["videos"]]
+    assert ids == ["ddddddddddd"]
+
+
+def test_grouped_search_suggests_words_that_do_occur(conn):
+    _two_videos(conn)
+    r = db.search_grouped(conn, "acquisition zebra")
+    assert r["videos"] == [] and r["suggest"] == [("acquisition", 4)]

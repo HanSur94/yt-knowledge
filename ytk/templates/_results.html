@@ -1,0 +1,41 @@
+{% set r = res %}
+{% if r and r.videos %}
+<div class="tally">
+  <span class="count">{{ r.total_videos }} video{{ "" if r.total_videos == 1 else "s" }}{% if r.total_moments %} · {{ r.total_moments }} moment{{ "" if r.total_moments == 1 else "s" }}{% endif %}</span>
+  {% if r.channels|length > 1 or channel %}
+  <a class="chip" href="/?q={{ q|urlencode }}"{% if not channel %} aria-current="true"{% endif %}>all</a>
+  {% for name, n in r.channels[:6] %}<a class="chip" href="/?q={{ q|urlencode }}&channel={{ name|urlencode }}"{% if name == channel %} aria-current="true"{% endif %}>{{ name }} <i>{{ n }}</i></a>{% endfor %}
+  {% if channel and channel not in r.channels[:6]|map("first") %}<a class="chip" aria-current="true" href="/?q={{ q|urlencode }}&channel={{ channel|urlencode }}">{{ channel }}</a>{% endif %}
+  {% if r.channels|length > 6 %}<span>+{{ r.channels|length - 6 }} more channels</span>{% endif %}
+  {% endif %}
+</div>
+{% for v in r.videos %}
+<article class="hit">
+  <a class="frame{% if not v['has_thumb'] %} empty{% endif %}" href="/v/{{ v['id'] }}" tabindex="-1" aria-hidden="true">{% if v["has_thumb"] %}<img src="/thumb/{{ v['id'] }}.jpg" alt="" loading="lazy">{% endif %}</a>
+  <div>
+    <h2><a href="/v/{{ v['id'] }}">{{ v["title"] or v["id"] }}</a></h2>
+    <div class="meta">
+      <span>{{ v["channel"] or "unknown channel" }}</span>
+      {% if v["last_watched"] %}<span>watched {{ v["last_watched"][:10] }}</span>{% endif %}
+      {% if v["duration_s"] %}<span>{{ v["duration_s"]//60 }} min</span>{% endif %}
+      {% if v["hits"] %}<span>said {{ v["hits"] }}×</span>{% elif not v["summary"] %}<span>title match · {{ v["state"] }}</span>{% endif %}
+    </div>
+    {% if v["summary"] %}<p class="gist">{{ v["summary"] }}</p>{% endif %}
+    {% if v["moments"] %}<ul class="moments">
+      {% for ts, text in v["moments"] %}<li><a class="at" href="https://youtu.be/{{ v['id'] }}?t={{ ts }}" title="play from here">{{ ts|clock }}</a><span>{{ text }}</span></li>{% endfor %}
+    </ul>
+    {% if v["hits"] > v["moments"]|length %}<a class="more" href="/v/{{ v['id'] }}">+{{ v["hits"] - v["moments"]|length }} more in this video →</a>{% endif %}
+    {% endif %}
+  </div>
+</article>
+{% endfor %}
+{% if r.total_videos > r.videos|length %}<p class="dim" style="font-size:12.5px;margin-top:1rem">Showing the top {{ r.videos|length }} of {{ r.total_videos }}. Add a word to narrow it down.</p>{% endif %}
+{% else %}
+<div class="empty-state">
+  <p>Nothing you watched says <b style="color:var(--ink)">{{ q }}</b>{% if channel %} in {{ channel }}{% endif %}.</p>
+  {% if channel %}<p><a class="link" href="/?q={{ q|urlencode }}">search every channel</a></p>{% endif %}
+  {% if r and r.suggest %}<p>No single line has every word. Try one:
+    {% for w, n in r.suggest %}<a class="chip" href="/?q={{ w|urlencode }}">{{ w }} <i>{{ n }}</i></a> {% endfor %}</p>
+  {% else %}<p>Only videos with a transcript are searched by what was said; the rest by title.</p>{% endif %}
+</div>
+{% endif %}

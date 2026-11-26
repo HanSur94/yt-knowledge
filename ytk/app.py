@@ -22,6 +22,15 @@ PKG = Path(__file__).parent
 templates = Jinja2Templates(directory=str(PKG / "templates"))
 
 
+def _clock(seconds) -> str:
+    s = int(seconds or 0)
+    h, m = divmod(s // 60, 60)
+    return f"{h}:{m:02d}:{s % 60:02d}" if h else f"{m}:{s % 60:02d}"
+
+
+templates.env.filters["clock"] = _clock
+
+
 @asynccontextmanager
 async def lifespan(app):
     conn = db.connect(cfg.db)
@@ -142,13 +151,35 @@ async def logout(request: Request):
     return RedirectResponse("/login", status_code=303)
 
 
+def _with_thumbs(rows) -> list[dict]:
+    return [{**dict(r), "has_thumb": os.path.exists(
+        os.path.join(cfg.thumbs, f"{r['id']}.jpg"))} for r in rows]
+
+
 @app.get("/", response_class=HTMLResponse)
+async def home(request: Request, q: str = "", channel: str = "", partial: int = 0):
+    """Search is the front door: the archive exists to find where something was said."""
+    conn = request.app.state.conn
+    q = q.strip()
+    res = db.search_grouped(conn, q, channel=channel or None) if q else None
+    if res:
+        res["videos"] = _with_thumbs(res["videos"])
+    ctx = {"q": q, "channel": channel, "res": res}
+    if partial:
+        return templates.TemplateResponse(request, "_results.html", ctx)
+    recent = [] if q else _with_thumbs(conn.execute(
+        """SELECT v.id, v.title, v.channel, v.duration_s, v.state,
+                  MAX(w.watched_at) AS last_watched
+           FROM watches w JOIN videos v ON v.id = w.video_id
+           GROUP BY v.id ORDER BY last_watched DESC LIMIT 8""").fetchall())
+    return templates.TemplateResponse(request, "home.html", {
+        **ctx, "recent": recent, "stats": db.archive_stats(conn)})
+
+
+@app.get("/library", response_class=HTMLResponse)
 async def library(request: Request, q: str = "", page: int = 1, per: int = 50):
     conn = request.app.state.conn
     where, args = "", []
-    hits = db.search(conn, q) if q.strip() else []
-    if hits:
-        return templates.TemplateResponse(request, "search.html", {"hits": hits, "q": q})
     if q.strip():
         where = "WHERE v.title LIKE ? OR v.channel LIKE ?"
         args = [f"%{q.strip()}%"] * 2
@@ -162,8 +193,7 @@ async def library(request: Request, q: str = "", page: int = 1, per: int = 50):
         [*args, per, (page - 1) * per]).fetchall()
     # Only the fetched rows have an image; asking for the rest renders a broken
     # icon 1,900 times. One stat per visible row is cheaper than a 404 storm.
-    rows = [{**dict(r), "has_thumb": os.path.exists(
-        os.path.join(cfg.thumbs, f"{r['id']}.jpg"))} for r in rows]
+    rows = _with_thumbs(rows)
     return templates.TemplateResponse(request, "library.html", {
         "rows": rows, "q": q, "page": page, "per": per, "total": total,
         "pages": max(1, -(-total // per))})

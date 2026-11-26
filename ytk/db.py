@@ -1,6 +1,7 @@
 """SQLite layer. Schema guard is PRAGMA user_version; refuse on mismatch."""
 import json
 import os
+import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
@@ -352,6 +353,127 @@ def search(conn, q: str, limit: int = 30) -> list:
         if len(rows) >= limit:
             break
     return rows
+
+
+# The search page shows where a phrase was said, not only which video said it.
+# highlight() wraps matches in two control characters no transcript contains;
+# the text is HTML-escaped first and only then are those turned into <mark>.
+_MARK = ("\x02", "\x03")
+CANDIDATES = 5000                      # transcript lines ranked before grouping
+
+
+def marked(text: str | None):
+    from markupsafe import Markup, escape
+    out = str(escape(text or ""))
+    return Markup(out.replace(_MARK[0], "<mark>").replace(_MARK[1], "</mark>"))
+
+
+def _terms(q: str) -> list[str]:
+    return [w for w in q.replace('"', " ").split() if w]
+
+
+def search_grouped(conn, q: str, videos: int = 20, moments: int = 4,
+                   channel: str | None = None) -> dict:
+    """Search results grouped by video, each with its matching moments.
+
+    Order: videos whose summary or title matches, then by how often the words
+    were said, then by the best line's bm25. `channel` narrows the list; the
+    channel counts are taken before it, so the other channels stay clickable.
+    """
+    words = _terms(q)
+    empty = {"videos": [], "total_videos": 0, "total_moments": 0,
+             "channels": [], "suggest": []}
+    if not words:
+        return empty
+    term = " AND ".join(f'"{w}"' for w in words)
+    found: dict[str, dict] = {}
+
+    def slot(vid):
+        return found.setdefault(vid, {"id": vid, "hits": 0, "moments": [],
+                                      "best": 0.0, "summary": None, "title_hit": False})
+
+    for r in conn.execute(f"""
+            SELECT g.video_id, g.start_s,
+                   highlight(segments_fts, 0, '{_MARK[0]}', '{_MARK[1]}') AS hit,
+                   f.rank AS rank
+            FROM segments_fts f JOIN segments g ON g.id=f.rowid
+            WHERE segments_fts MATCH ? ORDER BY rank LIMIT ?""", (term, CANDIDATES)):
+        s = slot(r["video_id"])
+        if not s["hits"]:
+            s["best"] = r["rank"]
+        s["hits"] += 1
+        if len(s["moments"]) < moments:
+            s["moments"].append((int(r["start_s"]), marked(r["hit"])))
+    for r in conn.execute(f"""
+            SELECT d.video_id,
+                   highlight(search_docs_fts, 2, '{_MARK[0]}', '{_MARK[1]}') AS headline
+            FROM search_docs_fts f JOIN search_docs d ON d.id=f.rowid
+            WHERE search_docs_fts MATCH ? ORDER BY rank LIMIT 200""", (term,)):
+        slot(r["video_id"])["summary"] = marked(r["headline"])
+    # Most of the archive has no transcript yet; its titles still count. LIKE
+    # finds substrings ("ai" in "maintain"), so whole words are checked here.
+    like = " AND ".join("(title LIKE ? OR channel LIKE ?)" for _ in words)
+    whole = [re.compile(rf"(?<!\w){re.escape(w)}(?!\w)", re.IGNORECASE) for w in words]
+    for r in conn.execute(f"SELECT id, title, channel FROM videos WHERE {like} LIMIT 2000",
+                          [p for w in words for p in (f"%{w}%",) * 2]):
+        text = f"{r['title'] or ''} {r['channel'] or ''}"
+        if all(rx.search(text) for rx in whole):
+            slot(r["id"])["title_hit"] = True
+    if not found:
+        return {**empty, "suggest": _suggest(conn, words)}
+
+    meta = {r["id"]: r for r in _video_meta(conn, list(found))}
+    counts: dict[str, int] = {}
+    for vid in found:
+        ch = (meta[vid]["channel"] if vid in meta else None) or ""
+        if ch:
+            counts[ch] = counts.get(ch, 0) + 1
+    rows = []
+    for vid, s in found.items():
+        m = meta.get(vid)
+        if m is None or (channel and (m["channel"] or "") != channel):
+            continue
+        s["moments"].sort()
+        rows.append({**dict(m), **s})
+    rows.sort(key=lambda r: (not (r["summary"] or r["title_hit"]), -r["hits"], r["best"]))
+    return {"videos": rows[:videos], "total_videos": len(rows),
+            "total_moments": sum(r["hits"] for r in rows),
+            "channels": sorted(counts.items(), key=lambda c: (-c[1], c[0]))[:12],
+            "suggest": []}
+
+
+def _video_meta(conn, ids: list[str]):
+    out = []
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out += conn.execute(f"""
+            SELECT v.id, v.title, v.channel, v.duration_s, v.state,
+                   MAX(w.watched_at) AS last_watched
+            FROM videos v LEFT JOIN watches w ON w.video_id=v.id
+            WHERE v.id IN ({",".join("?" * len(chunk))}) GROUP BY v.id""", chunk).fetchall()
+    return out
+
+
+def _suggest(conn, words: list[str]) -> list[tuple[str, int]]:
+    """Nothing has every word: say which words do occur, so one click loosens it."""
+    if len(words) < 2:
+        return []
+    out = []
+    for w in words:
+        n = conn.execute("SELECT COUNT(*) FROM segments_fts WHERE segments_fts MATCH ?",
+                         (f'"{w}"',)).fetchone()[0]
+        if n:
+            out.append((w, n))
+    return out
+
+
+def archive_stats(conn) -> dict:
+    r = conn.execute("""
+        SELECT (SELECT COUNT(*) FROM videos) AS videos,
+               COUNT(*) AS with_text, COALESCE(SUM(duration_s), 0) AS seconds
+        FROM videos WHERE id IN (SELECT DISTINCT video_id FROM segments)""").fetchone()
+    return {"videos": r["videos"], "with_text": r["with_text"],
+            "hours": round(r["seconds"] / 3600)}
 
 
 # --------------------------------------------------------------- controls ---

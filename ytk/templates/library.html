@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% block body %}
-<form method="get" action="/" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+<form method="get" action="/library" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
   <input type="search" name="q" value="{{ q }}" placeholder="title or channel" style="flex:1;min-width:0">
   <button type="submit">search</button>
   <span class="dim" style="font-size:12.5px;margin-left:auto">{{ total }} videos</span>
